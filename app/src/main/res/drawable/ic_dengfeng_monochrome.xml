@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <group android:pivotX="54" android:pivotY="54" android:scaleX="0.75" android:scaleY="0.75">
+    <path android:fillColor="#FF000000" android:pathData="M30,68 C29,49 43,36 64,34 C70,33 75,30 78,27 C81,46 69,62 52,64 C43,65 37,66 33,72 L29,77 C27,79 24,77 26,74 L30,68 Z M34,65 C47,53 60,47 73,34 C61,50 48,56 34,65 Z" android:fillType="evenOdd" />
+    <path android:fillColor="#FF000000" android:pathData="M39,72 C49,80 60,77 70,70 C76,66 81,67 82,71 C77,69 75,72 70,76 C58,84 45,83 39,72 Z M54,84 C62,88 70,84 76,82 C80,81 83,82 84,85 C79,83 75,87 69,89 C62,91 57,89 54,84 Z" />
+    </group>
+</vector>
