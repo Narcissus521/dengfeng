@@ -8,17 +8,20 @@
 
 ## 下载安装
 
-[下载等风 0.11.0 体验版 APK](https://github.com/Narcissus521/dengfeng/releases/download/v0.11.0/Dengfeng-0.11.0-preview.apk) · [全部版本](https://github.com/Narcissus521/dengfeng/releases)
+[下载等风 0.11.1 体验版 APK](https://github.com/Narcissus521/dengfeng/releases/download/v0.11.1/Dengfeng-0.11.1-preview.apk) · [全部版本](https://github.com/Narcissus521/dengfeng/releases)
 
 - Android 8.0 / API 26 及以上；Android 13 及以上提供原生边缘折射效果，较旧系统使用简化材质。
-- 安装官方提供的同签名新版可保留账本覆盖升级，请勿先卸载。
+- 安装本项目提供的同签名新版可保留账本覆盖升级，请勿先卸载。
 - 本仓库不包含签名私钥，自行构建的 APK 签名可能与已安装版本不同。
+
+0.11.1 优化消费圆环配色：十四类使用区分度更高、饱和度协调的固定色；必要／非必要／未判断分别为蓝／暖橙／灰蓝。
 
 ## 界面
 
 | 浅色 | 深色 |
 |---|---|
 | ![浅色首页](docs/images/home-light.png) | ![深色首页](docs/images/home-dark.png) |
+| ![浅色分析](docs/images/analysis-light.png) | ![深色分析](docs/images/analysis-dark.png) |
 
 截图使用独立示例账本。
 
@@ -48,7 +51,7 @@
 3. 构建与检查：
 
 ```sh
-./gradlew :app:assembleRelease :app:testReleaseUnitTest :app:lintRelease -PandroidTestBuildType=release
+sh ./gradlew :app:assembleRelease :app:testReleaseUnitTest :app:lintRelease -PandroidTestBuildType=release
 ```
 
 Windows 使用 `gradlew.bat`。默认使用本机 debug 签名构建体验包；个人签名密钥不包含在仓库中。
@@ -66,3 +69,5 @@ Windows 使用 `gradlew.bat`。默认使用本机 debug 签名构建体验包；
 本 App 用于个人记账与消费规划；统计、估算和购买建议依赖用户填写的数据，仅供参考，不构成投资、借贷或专业财务建议，也不保证购买或还款能力。请以实际账户余额、账单和有效合同为准。固定收支只更新本地账本，不执行真实扣款。
 
 头像由梨花怎黛玉提供；图标创作说明见 [branding/README.md](branding/README.md)。许可证由作者后续确定。
+
+
