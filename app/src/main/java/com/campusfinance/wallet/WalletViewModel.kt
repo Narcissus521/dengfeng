@@ -21,7 +21,6 @@ class WalletViewModel(private val repository: WalletRepository, demo: Boolean) :
         viewModelScope.launch {
             try {
                 repository.prepare(demo)
-                repository.postDue()
                 repository.ledger.flowOn(Dispatchers.Default).collect { mutable.value = mutable.value.copy(ledger=it, fatal=null) }
             } catch (e: Exception) {
                 if (e is CancellationException) throw e

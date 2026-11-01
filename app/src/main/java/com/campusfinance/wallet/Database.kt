@@ -55,7 +55,7 @@ abstract class WalletDao {
         putCategoryBudgets(s.categoryBudgets)
     }
 }
-@Database(entities = [Profile::class, Account::class, Entry::class, Budget::class, CategoryBudget::class, Goal::class, Debt::class, Installment::class, Audit::class, IncomePlan::class, DebtCategory::class, RecurringRule::class, RecurringAllocation::class, RecurringOccurrence::class, ReminderSettings::class], version = 5, exportSchema = true)
+@Database(entities = [Profile::class, Account::class, Entry::class, Budget::class, CategoryBudget::class, Goal::class, Debt::class, Installment::class, Audit::class, IncomePlan::class, DebtCategory::class, RecurringRule::class, RecurringAllocation::class, RecurringOccurrence::class, ReminderSettings::class], version = 7, exportSchema = true)
 abstract class WalletDatabase : RoomDatabase() {
     abstract fun walletDao(): WalletDao
     companion object {
@@ -96,9 +96,22 @@ abstract class WalletDatabase : RoomDatabase() {
                 db.execSQL("CREATE TABLE IF NOT EXISTS category_budgets (month TEXT NOT NULL, categoryGroupId TEXT NOT NULL, amount INTEGER NOT NULL, PRIMARY KEY(month, categoryGroupId))")
             }
         }
+        val MIGRATION_5_6=object:Migration(5,6){
+            override fun migrate(db:SupportSQLiteDatabase){db.execSQL("ALTER TABLE debts ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")}
+        }
+        val MIGRATION_6_7=object:Migration(6,7){
+            override fun migrate(db:SupportSQLiteDatabase){
+                db.execSQL("ALTER TABLE entries ADD COLUMN repaymentConsumption INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE debts ADD COLUMN repaymentsAreConsumption INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE debts ADD COLUMN categoryGroupId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE debts ADD COLUMN subcategoryId TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE debts ADD COLUMN necessity TEXT NOT NULL DEFAULT 'UNDECIDED'")
+                db.execSQL("ALTER TABLE recurring_occurrences ADD COLUMN postedDate TEXT")
+            }
+        }
         fun open(context: Context, demo: Boolean): WalletDatabase = Room.databaseBuilder(
             context.applicationContext, WalletDatabase::class.java, if (demo) "campus_demo.db" else "campus_wallet.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,MIGRATION_4_5).enableMultiInstanceInvalidation().build() // No destructive migration, deletion or silent recovery.
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6,MIGRATION_6_7).enableMultiInstanceInvalidation().build() // No destructive migration, deletion or silent recovery.
     }
 }
 
@@ -108,7 +121,7 @@ class WalletRepository(val db: WalletDatabase) {
     suspend fun prepare(demo: Boolean) = db.withTransaction {
         if (dao.profile() == null) dao.write(if (demo) demoLedger() else Ledger(debtCategories = defaultDebtCategories()))
         Rules.validate(dao.read())
-        // Old confirmation-based plans start automatic bookkeeping only from tomorrow; no retroactive cash changes.
+        // Convert legacy plans into future confirmation items; never backfill financial entries.
         val state = dao.read()
         val oldPlans = state.incomePlans.filter { it.enabled }
         if (oldPlans.isNotEmpty()) {
@@ -120,7 +133,7 @@ class WalletRepository(val db: WalletDatabase) {
                 recurringRules=state.recurringRules+converted,
                 recurringAllocations=state.recurringAllocations+converted.map { r -> RecurringAllocation(r.id, r.id.removePrefix("legacy-auto-"), r.amount) },
                 profile=state.profile.copy(revision=maxOf(System.currentTimeMillis(),state.profile.revision+1)),
-                audits=state.audits+Audit(entityId="profile",action="升级固定收入计划",before="手动确认到账",after="从明日起自动记账",reason="保留原流水，不补记历史月份"))
+                audits=state.audits+Audit(entityId="profile",action="升级固定收入计划",before="手动确认到账",after="从明日起列入待确认固定收支",reason="保留原流水，不补记历史月份"))
             Rules.validate(next); dao.write(next)
         }
     }
@@ -153,23 +166,32 @@ class WalletRepository(val db: WalletDatabase) {
         if (old != null && s.entries.any { it.accountId == a.id || it.toAccountId == a.id }) {
             require(a.start <= old.start) { "已有流水后，开始记账日只能向前扩展" }
         }
-        require(reason.isNotBlank()) { "请填写修改或核对原因" }
         s.copy(accounts = s.accounts.filterNot { it.id == a.id } + a)
     }
     suspend fun toggleAccount(id: String) = change(id, "账户状态", "用户手动切换账户启用状态") { s ->
         s.copy(accounts = s.accounts.map { if (it.id == id) it.copy(disabledOn = if (it.disabledOn == null) today().toString() else null) else it })
     }
     suspend fun entry(e: Entry, reason: String = "手动记账", fee: Long = 0) = change(e.id, if (e.voided) "撤销交易" else "保存交易", reason) { s ->
-        require(reason.isNotBlank()) { "请填写修改原因" }
         var next = if (e.voided) s.copy(entries = s.entries.map { if (it.id == e.id) e else it }) else Rules.replaceEntry(s, e)
         if (fee > 0) {
             require(e.kind == Kind.TRANSFER.name && s.entries.none { it.id == e.id }) { "手续费只能在新转账时一并登记" }
             val charge = Entry(kind = Kind.EXPENSE.name, amount = fee, accountId = e.accountId, date = e.date,
-                category = "转账手续费", bucket = e.bucket, note = "转账手续费 · ${e.note}", transferId = e.id,categoryGroupId="finance",subcategoryId="finance.fees")
+                category = "转账手续费", bucket = e.bucket, note = "转账手续费 · ${e.note}", transferId = e.id,categoryGroupId="finance",subcategoryId="finance.fees",necessity=consumptionNecessity(e.bucket))
             next = Rules.replaceEntry(next, charge).copy(audits = next.audits + Audit(entityId = charge.id, action = "记录手续费", before = "无", after = charge.toString(), reason = "与转账一起保存，后续独立维护"))
         }
         next
     }
+    suspend fun expenseMetadata(id:String,group:String,leaf:String,necessity:String,bucket:String)=
+        change(id,"修改分类与消费性质","只更新用途与性质，不改变付款金额、日期或合同关联") {s->
+            val e=s.entries.first{it.id==id}
+            require(!e.voided&&(e.kind=="EXPENSE"||e.kind=="REPAYMENT")){"该记录不能修改消费分类"}
+            val category=ExpenseTaxonomy.explicit(group,leaf) ?: error("请选择有效消费分类")
+            s.copy(entries=s.entries.map{row->
+                val same=row.id==id||e.kind=="REPAYMENT"&&row.kind=="REPAYMENT"&&row.installmentId==e.installmentId&&!row.voided||
+                    e.recurringOccurrenceId!=null&&row.recurringOccurrenceId==e.recurringOccurrenceId&&row.kind=="EXPENSE"&&!row.voided
+                if(same)row.copy(category=category.group.name,categoryGroupId=group,subcategoryId=leaf,necessity=necessity,bucket=bucket) else row
+            })
+        }
     suspend fun voidEntry(id: String, reason: String) = db.withTransaction {
         val s = dao.read()
         val e = s.entries.first { it.id == id }
@@ -187,12 +209,11 @@ class WalletRepository(val db: WalletDatabase) {
         val s = dao.read()
         val delta = Math.subtractExact(target, s.balance(id))
         require(delta != 0L) { "核对余额与当前余额一致，无需校准" }
-        require(reason.isNotBlank()) { "请填写校准原因" }
         entry(Entry(kind = Kind.ADJUSTMENT.name, amount = delta, accountId = id, date = today().toString(),
             category = "余额修正", note = "核对目标 ¥${Money.format(target)}；$reason"), reason)
     }
     suspend fun budget(b: Budget) = change(b.month, "调整预算", "手动月度预算，不产生现金变动") { s -> s.copy(budgets = s.budgets.filterNot { it.month == b.month } + b) }
-    suspend fun categoryBudgets(month:String,caps:List<CategoryBudget>)=change("category-budget:$month","调整分类预算","细分月度总预算，不改变现金或必要／自由预算") {s->
+    suspend fun categoryBudgets(month:String,caps:List<CategoryBudget>)=change("category-budget:$month","调整分类预算","细分月度总预算，不改变现金或必要／非必要预算") {s->
         require(caps.all{it.month==month}){"分类预算月份不匹配"}
         s.copy(categoryBudgets=s.categoryBudgets.filterNot{it.month==month}+caps)
     }
@@ -211,7 +232,7 @@ class WalletRepository(val db: WalletDatabase) {
     suspend fun debtCategory(c: DebtCategory) = change(c.id, "设置欠款种类", "自定义种类；停用后保留已有负债") { s ->
         s.copy(debtCategories = s.debtCategories.filterNot { it.id == c.id } + c)
     }
-    suspend fun recurring(rule: RecurringRule, allocations: List<RecurringAllocation>) = change(rule.id,"设置固定收支","从开始日期自动记账，历史期次保持不变") { s ->
+    suspend fun recurring(rule: RecurringRule, allocations: List<RecurringAllocation>) = change(rule.id,"设置固定收支","到期等待用户确认，历史期次保持不变") { s ->
         require(allocations.all { it.ruleId == rule.id }) { "账户分摊与固定计划不匹配" }
         val old=s.recurringRules.find{it.id==rule.id}
         val effective=if(old?.enabled==false&&rule.enabled)rule.copy(startDate=maxOf(rule.startDate,today().toString())) else rule
@@ -219,25 +240,26 @@ class WalletRepository(val db: WalletDatabase) {
             recurringAllocations=s.recurringAllocations.filterNot { it.ruleId == rule.id }+allocations)
     }
     suspend fun reminder(settings: ReminderSettings) = change("reminder","设置记账提醒","每天所选时间段内提醒一次") { it.copy(reminder=settings) }
-    private fun postOccurrence(s: Ledger, rule: RecurringRule, date: LocalDate): Ledger {
-        val id="${rule.id}@$date"
-        val splits=s.recurringAllocations.filter { it.ruleId == rule.id }
-        val unavailable=splits.any { allocation -> s.accounts.first { it.id == allocation.accountId }.let { date.toString()<it.start || it.disabledOn?.let { disabled -> date.toString()>=disabled } == true } }
-        val occurrence=RecurringOccurrence(id,rule.id,date.toString(),rule.amount,rule.kind,
-            if(unavailable)"SKIPPED" else "POSTED",if(unavailable)"账户不可用，请核对后手动补记" else "按固定计划自动记账")
-        val entries=if(unavailable)emptyList() else splits.map { a -> Entry(kind=rule.kind,amount=a.amount,accountId=a.accountId,date=date.toString(),
-            category=rule.category,bucket=rule.bucket,note="${rule.name} · 自动记账",recurringOccurrenceId=id,
-            categoryGroupId=rule.categoryGroupId,subcategoryId=rule.subcategoryId,necessity=rule.necessity) }
-        return s.copy(entries=s.entries+entries,recurringOccurrences=s.recurringOccurrences+occurrence)
+    /** Compatibility entry point: opening/background processing can never create financial entries. */
+    suspend fun postDue(now: ZonedDateTime = ZonedDateTime.now(financeZone)): Int = 0
+    suspend fun confirmRecurring(ruleId:String,scheduledDate:String,date:String,amount:Long,allocations:List<Pair<String,Long>>,
+        now:ZonedDateTime=ZonedDateTime.now(financeZone))=change("$ruleId@$scheduledDate","确认本次固定记账","用户确认；本次金额和发生日期独立于后续计划") {s->
+        val rule=s.requirePendingRecurring(ruleId,scheduledDate,now)
+        require(amount in 1..MAX_MONEY&&allocations.isNotEmpty()&&allocations.map{it.first}.distinct().size==allocations.size){"本次金额或资金账户无效"}
+        require(allocations.all{it.second>0}&&allocations.map{it.second}.exactSum()==amount){"各账户金额合计须等于本次金额"}
+        require(rule.kind!="INCOME"||allocations.size==1){"收入请指定一个到账账户"}
+        val id="$ruleId@$scheduledDate"
+        val entries=allocations.map{(account,value)->Entry(kind=rule.kind,amount=value,accountId=account,date=date,
+            category=rule.category,bucket=rule.bucket,note="${rule.name} · 已确认",recurringOccurrenceId=id,
+            categoryGroupId=rule.categoryGroupId,subcategoryId=rule.subcategoryId,necessity=rule.necessity).also{Rules.checkEnabled(s,it)}}
+        s.copy(entries=s.entries+entries,recurringOccurrences=s.recurringOccurrences+RecurringOccurrence(id,ruleId,scheduledDate,amount,rule.kind,reason="用户确认",postedDate=date))
     }
-    suspend fun postDue(now: ZonedDateTime = ZonedDateTime.now(financeZone)): Int = db.withTransaction {
-        val pending=pendingRecurring(dao.read(),now)
-        if(pending.isNotEmpty()) change("recurring","固定收支自动记账","按北京时间到期处理；已撤销期次不重复生成") { before ->
-            pending.fold(before) { current, (rule,date) -> postOccurrence(current,rule,date) }
+    suspend fun skipRecurring(ruleId:String,scheduledDate:String,now:ZonedDateTime=ZonedDateTime.now(financeZone))=
+        change("$ruleId@$scheduledDate","跳过本次固定记账","用户选择跳过，不生成流水或改变余额") {s->
+            val rule=s.requirePendingRecurring(ruleId,scheduledDate,now)
+            s.copy(recurringOccurrences=s.recurringOccurrences+RecurringOccurrence("$ruleId@$scheduledDate",ruleId,scheduledDate,rule.amount,rule.kind,"SKIPPED","用户跳过本次"))
         }
-        pending.size
-    }
-    suspend fun undoRecurring(id: String, reason: String = "撤销本次自动记账") = change(id,"撤销固定记账",reason) { s ->
+    suspend fun undoRecurring(id: String, reason: String = "撤销本次固定记账") = change(id,"撤销固定记账",reason) { s ->
         val occurrence=s.recurringOccurrences.first { it.id == id }
         require(occurrence.status == "POSTED") { "该期次不在已记账状态" }
         val rows=s.entries.filter { it.recurringOccurrenceId == id }
@@ -245,7 +267,7 @@ class WalletRepository(val db: WalletDatabase) {
         s.copy(entries=s.entries.map { if(it.recurringOccurrenceId == id)it.copy(voided=true) else it },
             recurringOccurrences=s.recurringOccurrences.map { if(it.id == id)it.copy(status="UNDONE",reason=reason) else it })
     }
-    suspend fun debt(d: Debt, rows: List<Installment>) = change(d.id, "保存负债", "用户设置还款计划；不自动计算利息或扣款") { s ->
+    suspend fun debt(d: Debt, rows: List<Installment>,applyToHistory:Boolean=false) = change(d.id, "保存负债", if(applyToHistory)"用户明确同步历史还款的消费分类、性质与统计开关" else "用户设置还款计划；历史还款统计保持不变") { s ->
         val old = s.debts.find { it.id == d.id }
         require(rows.all { it.debtId == d.id }) { "还款计划与负债不匹配" }
         if (d.categoryId != old?.categoryId) require(s.debtCategories.any { it.id == d.categoryId && !it.archived }) { "请选择启用中的欠款种类" }
@@ -257,20 +279,28 @@ class WalletRepository(val db: WalletDatabase) {
                 require(rows.any { it == row }) { "第 ${row.number} 期曾登记过还款，不能修改金额、日期或删除；其余期次可调整" }
             }
         }
-        s.copy(debts = s.debts.filterNot { it.id == d.id } + d, installments = s.installments.filterNot { it.debtId == d.id } + rows)
+        val ids=s.installments.filter{it.debtId==d.id}.map{it.id}.toSet()
+        s.copy(debts = s.debts.filterNot { it.id == d.id } + d, installments = s.installments.filterNot { it.debtId == d.id } + rows,
+            entries=if(!applyToHistory)s.entries else s.entries.map{e->if(e.kind=="REPAYMENT"&&e.installmentId in ids)e.withDebtConsumption(d) else e})
+    }
+    suspend fun archiveDebt(id:String,archived:Boolean)=change(id,if(archived)"移除负债计划" else "恢复负债计划","保留所有合同、期次和历史还款；只改变当前计划列表和待还统计") { s->
+        require(s.debts.any{it.id==id}){"负债计划不存在"}
+        s.copy(debts=s.debts.map{if(it.id==id)it.copy(archived=archived) else it})
     }
     suspend fun repay(row: Installment, accountId: String, date: String) = repay(row, listOf(accountId to row.due), date)
-    suspend fun repay(row: Installment, allocations: List<Pair<String, Long>>, date: String) = change(row.id, "登记实际还款", "各账户扣款一起保存，不重复计入日常消费") { s ->
+    suspend fun repay(row: Installment, allocations: List<Pair<String, Long>>, date: String,necessity:String?=null) = change(row.id, "登记实际还款", "一笔还款扣款一次；消费属性按合同设置，不生成重复支出") { s ->
         require(s.installments.any { it == row }) { "还款计划已变化，请重新打开核对" }
         require(s.payments(row).isEmpty()) { "这一期已经还款，请勿重复登记" }
         require(allocations.isNotEmpty() && allocations.map { it.first }.distinct().size == allocations.size) { "请选择不同的付款账户" }
         require(allocations.all { it.second in 1..MAX_MONEY } && allocations.map { it.second }.exactSum() == row.due) { "各账户扣款合计须等于当期应还金额" }
         val d = s.debts.first { it.id == row.debtId }
+        require(!d.archived){"计划已移除，请先恢复后再登记还款"}
         val repaymentId = newId()
         val payments = allocations.map { (account, amount) ->
             require(s.accounts.any { it.id == account }) { "付款账户不存在" }
             Entry(kind = Kind.REPAYMENT.name, amount = amount, accountId = account, date = date, installmentId = row.id,
-                category = "负债还款", note = "${d.name} · 第 ${row.number} 期${if (allocations.size > 1) " · 组合还款" else ""}", repaymentId = repaymentId).also { Rules.checkEnabled(s, it) }
+                category = "负债还款", note = "${d.name} · 第 ${row.number} 期${if (allocations.size > 1) " · 组合还款" else ""}", repaymentId = repaymentId)
+                .withDebtConsumption(if(necessity==null)d else d.copy(necessity=necessity)).also { Rules.checkEnabled(s, it) }
         }
         s.copy(entries = s.entries + payments, audits = s.audits + payments.map { Audit(entityId = it.id, action = "还款账户扣款", before = "无", after = it.toString(), reason = "与第 ${row.number} 期整笔还款一起保存") })
     }

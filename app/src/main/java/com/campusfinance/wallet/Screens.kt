@@ -63,7 +63,7 @@ import java.time.YearMonth
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
                     Text("月度预算",fontWeight=FontWeight.SemiBold,fontSize=16.sp);Caption("${YearMonth.parse(month).monthValue} 月 · 查看规划 ›")
                 }
-                if(b==null) { Text("本月还没有预算",fontSize=23.sp,fontWeight=FontWeight.Medium);Caption("先给必要和可选消费各留一份额度。") }
+                if(b==null) { Text("本月还没有预算",fontSize=23.sp,fontWeight=FontWeight.Medium);Caption("先给必要和非必要消费各留一份额度。") }
                 else {
                     val left=b.total-used
                     Caption(if(left<0) "本月已超支" else "本月预算剩余",if(left<0) Red else Muted)
@@ -167,7 +167,7 @@ import java.time.YearMonth
                         Caption("总预算剩余");Text("¥ ${Money.format(b.total-s.usage(month))}",fontSize=32.sp,fontWeight=FontWeight.SemiBold,color=if(s.usage(month)>b.total) Red else Forest)
                         Progress(s.usage(month),b.total);AmountLine("总预算",b.total);AmountLine("实际已花",s.usage(month));AmountLine("未分配预算",b.total-b.necessary-b.free)
                     } }
-                    listOf(Triple("日常必需",b.necessary,"NECESSARY"),Triple("可选消费",b.free,"FREE")).forEach { (name,total,bucket) ->
+                    listOf(Triple("必要消费",b.necessary,"NECESSARY"),Triple("非必要消费",b.free,"FREE")).forEach { (name,total,bucket) ->
                         item { CardBox {
                             Text(name,fontWeight=FontWeight.SemiBold);AmountLine("计划额度",total);AmountLine("实际已花",s.usage(month,bucket));Progress(s.usage(month,bucket),total)
                             AmountLine("剩余额度",total-s.usage(month,bucket),if(total<s.usage(month,bucket)) Red else Forest)
@@ -175,7 +175,7 @@ import java.time.YearMonth
                     }
                     if(b.total>s.cash()) item { Notice("本月预算高于当前总现金，请留意资金支持情况。",true) }
                 }
-                item { Notice("未分配额度独立保留，不自动补自由或日常必需的超支；预算不自动结转。退款按到账月抵减。分期还款暂未计入日常预算。") }
+                item { Notice("未分配额度独立保留，不自动补非必要或必要消费的超支；预算不自动结转。退款按到账月抵减。分期还款暂未计入日常预算。") }
             }
             1 -> {
                 item { Headline("想实现的小目标","新建目标"){open(Editor("goal"))} }
@@ -221,10 +221,10 @@ import java.time.YearMonth
 
 @Composable fun AnalyticsScreen(s: Ledger,month:String,open:(Editor)->Unit) {
     val entries=s.activeEntries.filter{it.date.startsWith(month)}
-    val expense=entries.filter{it.kind=="EXPENSE"}.map{it.amount}.exactSum()
+    val expense=entries.filter{it.isConsumptionExpense()}.map{it.amount}.exactSum()
     val refunds=entries.filter{it.kind=="REFUND"}.map{it.amount}.exactSum()
     val repayments=entries.filter{it.kind=="REPAYMENT"}.map{it.amount}.exactSum()
-    val categories=entries.filter{it.kind=="EXPENSE"}.groupBy{it.category}.mapValues{(_,v)->v.map{it.amount}.exactSum()}.entries.sortedByDescending{it.value}
+    val categories=entries.filter{it.isConsumptionExpense()}.groupBy{it.category}.mapValues{(_,v)->v.map{it.amount}.exactSum()}.entries.sortedByDescending{it.value}
     val palette=if(LocalWalletColors.current.dark)
         listOf(Forest,Color(0xFF8FAAD0),Color(0xFFC9BCE1),Color(0xFF92C5D6),Color(0xFFD8B88B),Color(0xFFCDB4C3),Color(0xFFA7B4C6))
     else listOf(Forest,Color(0xFF8CA5C6),Color(0xFFAEA2C5),Color(0xFF78AABD),Color(0xFFC8A779),Color(0xFF988994),Color(0xFF8993A4))

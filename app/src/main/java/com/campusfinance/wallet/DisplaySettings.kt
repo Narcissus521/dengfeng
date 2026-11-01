@@ -40,7 +40,8 @@ data class DisplayState(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val layoutSize: LayoutSize = LayoutSize.STANDARD, val layoutPercent: Int = 100,
     val cardSizes: Map<OverviewCard,Int> = emptyMap(),
-    val cardGrids: Map<OverviewCard,CardGridLayout> = emptyMap()
+    val cardGrids: Map<OverviewCard,CardGridLayout> = emptyMap(),
+    val customHome:Boolean=false
 ) {
     val motionEnabled get() = animations && systemAnimations
     fun duration(ms: Int) = if (motionEnabled) ms else 0
@@ -73,7 +74,7 @@ class DisplayController(private val context: Context, private val window: Window
         }.toMap()
     }
     private val mutable = MutableStateFlow(DisplayState(themeMode=ThemeMode.from(prefs.getString("theme_mode",null)),
-        layoutSize=readLayoutSize(),layoutPercent=readLayoutPercent(readLayoutSize()),cardSizes=readCardSizes(),cardGrids=readCardGrids()))
+        layoutSize=readLayoutSize(),layoutPercent=readLayoutPercent(readLayoutSize()),cardSizes=readCardSizes(),cardGrids=readCardGrids(),customHome=prefs.getBoolean("custom_home",false)))
     val state = mutable.asStateFlow()
     private var started = false
     private val listener = object: DisplayManager.DisplayListener {
@@ -114,6 +115,7 @@ class DisplayController(private val context: Context, private val window: Window
         prefs.edit().putString("layout_size",size.name).putInt("layout_percent",normalized).apply()
         mutable.value=mutable.value.copy(layoutSize=size,layoutPercent=normalized)
     }
+    fun setCustomHome(enabled:Boolean){prefs.edit().putBoolean("custom_home",enabled).apply();mutable.value=mutable.value.copy(customHome=enabled)}
     fun setCardSize(card:OverviewCard,percent:Int) {
         val normalized=percent.coerceIn(LayoutPolicy.MIN_PERCENT,LayoutPolicy.MAX_PERCENT)
         if(mutable.value.cardSizes[card]==normalized)return
@@ -143,7 +145,7 @@ class DisplayController(private val context: Context, private val window: Window
         val saving=power.isPowerSaveMode
         val requested=if(started)RefreshPolicy.preferredRate(rates,high,saving) else 0f
         val layoutSize=readLayoutSize()
-        mutable.value=DisplayState(high,prefs.getBoolean("motion_enabled",true),display?.refreshRate ?: 0f,rates,requested,saving,ValueAnimator.areAnimatorsEnabled(),ThemeMode.from(prefs.getString("theme_mode",null)),layoutSize,readLayoutPercent(layoutSize),readCardSizes(),readCardGrids())
+        mutable.value=DisplayState(high,prefs.getBoolean("motion_enabled",true),display?.refreshRate ?: 0f,rates,requested,saving,ValueAnimator.areAnimatorsEnabled(),ThemeMode.from(prefs.getString("theme_mode",null)),layoutSize,readLayoutPercent(layoutSize),readCardSizes(),readCardGrids(),prefs.getBoolean("custom_home",false))
         if(window.attributes.preferredRefreshRate!=requested) window.attributes=window.attributes.apply { preferredRefreshRate=requested }
     }
 }
@@ -161,7 +163,7 @@ class DisplayController(private val context: Context, private val window: Window
     val controller=LocalDisplayController.current
     Form("显示与动效",close=close,confirm=null) {
         Text("外观主题",fontWeight=FontWeight.SemiBold)
-        Caption("当前配色：白茶柔雾 · 液态玻璃与茶元素")
+        Caption("当前配色：暖纸酒红，纸质账页与实体按键")
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
             ThemeMode.entries.forEach { mode ->
                 FilterChip(selected=state.themeMode==mode,onClick={controller?.setThemeMode(mode)},
@@ -169,6 +171,7 @@ class DisplayController(private val context: Context, private val window: Window
             }
         }
         Caption("立即切换并自动保存。跟随系统会按照手机的深色模式设置变化。")
+        Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text("自定义首页布局");Caption("开启后使用可拖动、拉伸的卡片；原有布局设置已保留。")};Switch(state.customHome,{controller?.setCustomHome(it)},modifier=Modifier.testTag("custom-home-toggle"))}
         TeaLink("卡片大小","长按移动位置，拖动边缘调大小",onClick=layout)
         HorizontalDivider(color=Pale)
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {

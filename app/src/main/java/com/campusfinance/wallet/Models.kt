@@ -29,7 +29,7 @@ object Money {
 }
 fun Iterable<Long>.exactSum(): Long = fold(0L, Math::addExact)
 enum class Kind(val label: String) { EXPENSE("支出"), INCOME("收入"), TRANSFER("转账"), REFUND("退款"), ADJUSTMENT("余额校准"), REPAYMENT("还款") }
-enum class Bucket(val label: String) { NECESSARY("必要消费"), FREE("自由消费") }
+enum class Bucket(val label: String) { NECESSARY("必要消费"), FREE("非必要消费"), UNDECIDED("未判断") }
 val expenseCategories = ExpenseTaxonomy.groups.map{it.name}
 val incomeCategories = listOf("父母生活费", "兼职工资", "奖学金", "红包", "其他收入")
 
@@ -40,14 +40,20 @@ data class Account(@PrimaryKey val id: String = newId(), val name: String, val t
     val opening: Long, val start: String, val disabledOn: String? = null)
 @Entity(tableName = "entries")
 data class Entry(@PrimaryKey val id: String = newId(), val kind: String, val amount: Long,
-    val accountId: String, val date: String, val category: String = "", val bucket: String = Bucket.FREE.name,
+    val accountId: String, val date: String, val category: String = "", val bucket: String = Bucket.UNDECIDED.name,
     val toAccountId: String? = null, val originalId: String? = null, val installmentId: String? = null,
     val note: String = "", val voided: Boolean = false, val transferId: String? = null,
     val incomePlanId: String? = null, val incomePlanMonth: String? = null, val repaymentId: String? = null,
     val recurringOccurrenceId: String? = null,
     @ColumnInfo(defaultValue = "''") val categoryGroupId:String="",
     @ColumnInfo(defaultValue = "''") val subcategoryId:String="",
-    @ColumnInfo(defaultValue = "'UNDECIDED'") val necessity:String=Necessity.UNDECIDED.name)
+    @ColumnInfo(defaultValue = "'UNDECIDED'") val necessity:String=Necessity.UNDECIDED.name,
+    @ColumnInfo(defaultValue = "0") val repaymentConsumption:Boolean=false)
+fun Entry.isConsumptionExpense()=kind==Kind.EXPENSE.name||kind==Kind.REPAYMENT.name&&repaymentConsumption
+fun Entry.isConsumptionRecord()=isConsumptionExpense()||kind==Kind.REFUND.name
+fun Entry.withDebtConsumption(debt:Debt)=copy(repaymentConsumption=debt.repaymentsAreConsumption,
+    category=if(debt.categoryGroupId.isEmpty())"负债还款" else ExpenseTaxonomy.resolve(debt.categoryGroupId,debt.subcategoryId,"其他支出").group.name,
+    categoryGroupId=debt.categoryGroupId,subcategoryId=debt.subcategoryId,necessity=debt.necessity,bucket=consumptionBucket(debt.necessity))
 @Entity(tableName = "budgets")
 data class Budget(@PrimaryKey val month: String, val total: Long, val necessary: Long, val free: Long)
 @Entity(tableName="category_budgets",primaryKeys=["month","categoryGroupId"])
@@ -73,7 +79,12 @@ fun Goal.progress(now: LocalDate = today()): SavingsProgress {
 @Entity(tableName = "debts")
 data class Debt(@PrimaryKey val id: String = newId(), val name: String, val principal: Long, val purchaseDate: String,
     val note: String = "", val categoryId: String? = null,
-    @ColumnInfo(defaultValue = "'LEGACY'") val scheduleType: String = "LEGACY")
+    @ColumnInfo(defaultValue = "'LEGACY'") val scheduleType: String = "LEGACY",
+    @ColumnInfo(defaultValue = "0") val archived:Boolean=false,
+    @ColumnInfo(defaultValue = "0") val repaymentsAreConsumption:Boolean=false,
+    @ColumnInfo(defaultValue = "''") val categoryGroupId:String="",
+    @ColumnInfo(defaultValue = "''") val subcategoryId:String="",
+    @ColumnInfo(defaultValue = "'UNDECIDED'") val necessity:String=Necessity.UNDECIDED.name)
 @Entity(tableName = "debt_categories")
 data class DebtCategory(@PrimaryKey val id: String = newId(), val name: String, val archived: Boolean = false)
 fun defaultDebtCategories() = listOf(
@@ -128,13 +139,13 @@ data class Ledger(
     fun bucketOf(e: Entry): String = if (e.kind == Kind.REFUND.name) entries.first { it.id == e.originalId }.bucket else e.bucket
     fun categoryOf(e: Entry): String = if (e.kind == Kind.REFUND.name) entries.first { it.id == e.originalId }.category else e.category
     fun usage(month: String, bucket: String? = null): Long = activeEntries.filter {
-        it.date.startsWith(month) && it.kind in listOf(Kind.EXPENSE.name, Kind.REFUND.name) && (bucket == null || bucketOf(it) == bucket)
+        it.date.startsWith(month) && it.isConsumptionRecord() && (bucket == null || bucketOf(it) == bucket)
     }.map { if (it.kind == Kind.REFUND.name) -it.amount else it.amount }.exactSum()
     fun income(month: String) = activeEntries.filter { it.date.startsWith(month) && it.kind == Kind.INCOME.name }.map { it.amount }.exactSum()
     fun refunds(id: String): Long = activeEntries.filter { it.kind == Kind.REFUND.name && it.originalId == id }.map { it.amount }.exactSum()
     fun payments(i: Installment): List<Entry> = activeEntries.filter { it.installmentId == i.id && it.kind == Kind.REPAYMENT.name }
     fun payment(i: Installment): Entry? = payments(i).firstOrNull()
-    fun unpaid() = installments.filter { payment(it) == null }.sortedBy { it.date }
+    fun unpaid() = installments.filter { row->payment(row)==null && debts.any{it.id==row.debtId&&!it.archived} }.sortedBy { it.date }
     fun budget(month: String) = budgets.find { it.month == month }
     fun incomeReceipt(accountId: String, month: String) = activeEntries.find { it.incomePlanId == accountId && it.incomePlanMonth == month }
     fun debtCategoryName(d: Debt) = debtCategories.find { it.id == d.categoryId }?.name ?: "未分类"
@@ -177,6 +188,7 @@ object Rules {
             require(YearMonth.parse(p.startMonth).toString() == p.startMonth) { "开始月份应为 YYYY-MM" }
         }
         s.debts.forEach { d ->
+            ExpenseTaxonomy.validate(d.categoryGroupId,d.subcategoryId,d.necessity)
             require(d.scheduleType in DebtSchedule.entries.map { it.name }) { "还款方式无效" }
             val legacy = d.scheduleType == DebtSchedule.LEGACY.name
             require(d.name.isNotBlank() && (legacy || d.name.length <= 40)) { "负债名称须为 1–40 个字" }
@@ -205,7 +217,8 @@ object Rules {
         s.entries.forEach { e ->
             val kind = runCatching { Kind.valueOf(e.kind) }.getOrElse { error("不支持的交易类型") }
             ExpenseTaxonomy.validate(e.categoryGroupId,e.subcategoryId,e.necessity)
-            require(kind==Kind.EXPENSE || e.categoryGroupId.isEmpty()&&e.subcategoryId.isEmpty()&&e.necessity==Necessity.UNDECIDED.name){"只有消费记录保存分类与必要性；退款随原消费更新"}
+            require(kind==Kind.EXPENSE||kind==Kind.REPAYMENT || e.categoryGroupId.isEmpty()&&e.subcategoryId.isEmpty()&&e.necessity==Necessity.UNDECIDED.name){"只有消费或还款记录保存分类与必要性；退款随原消费更新"}
+            require(!e.repaymentConsumption||kind==Kind.REPAYMENT){"仅还款可以设置还款消费属性"}
             require(e.bucket in Bucket.entries.map { it.name }) { "预算类型无效" }
             require(kind == Kind.TRANSFER || e.toAccountId == null) { "只有转账可以指定转入账户" }
             require(kind == Kind.REFUND || e.originalId == null) { "只有退款可以关联原消费" }
@@ -250,6 +263,7 @@ object Rules {
             require(payments.map { it.amount }.exactSum() == row.due) { "各账户扣款合计须等于当期应还金额，请勿重复还款" }
             require(payments.map { it.accountId }.distinct().size == payments.size) { "同一期中，每个账户只能填写一次" }
             require(payments.map { it.date }.distinct().size == 1) { "组合还款须使用同一实际还款日期" }
+            require(payments.map{listOf(it.repaymentConsumption.toString(),it.categoryGroupId,it.subcategoryId,it.necessity,it.bucket)}.distinct().size==1){"组合还款的消费属性须一起修改"}
             if (payments.size > 1) require(payments.all { it.repaymentId != null } && payments.map { it.repaymentId }.distinct().size == 1) { "组合还款须一起登记" }
         }
         s.entries.filter { it.repaymentId != null }.groupBy { it.repaymentId }.forEach { (_, group) ->

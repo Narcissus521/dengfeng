@@ -52,11 +52,32 @@ import androidx.compose.ui.unit.sp
 @Composable fun DebtForm(s:Ledger,old:Debt?,vm:WalletViewModel,busy:Boolean,close:()->Unit) {
     val existing=s.installments.filter{it.debtId==old?.id}.sortedBy{it.number}
     var name by rememberSaveable{mutableStateOf(old?.name ?: "")}
-    var category by rememberSaveable{mutableStateOf(old?.categoryId ?: s.debtCategories.firstOrNull{it.id=="debt-kind-other"&&!it.archived}?.id ?: s.debtCategories.firstOrNull{!it.archived}?.id)}
+    var category by rememberSaveable{mutableStateOf(old?.categoryId ?: s.debtCategories.firstOrNull{it.id=="debt-kind-shopping"&&!it.archived}?.id ?: s.debtCategories.firstOrNull{!it.archived}?.id)}
     var note by rememberSaveable{mutableStateOf(old?.note ?: "")}
+    var consumes by rememberSaveable{mutableStateOf(old?.repaymentsAreConsumption ?: (category=="debt-kind-shopping"))}
+    var group by rememberSaveable{mutableStateOf(old?.categoryGroupId?.ifEmpty{null} ?: "other")}
+    var leaf by rememberSaveable{mutableStateOf(old?.subcategoryId ?: "")}
+    var nature by rememberSaveable{mutableStateOf(old?.necessity ?: "NECESSARY")}
+    var history by rememberSaveable{mutableStateOf(false)}
+    val selectKind:(String)->Unit={category=it;if(old==null)consumes=it=="debt-kind-shopping"}
+    fun metadata(d:Debt)=d.copy(repaymentsAreConsumption=consumes,categoryGroupId=group,subcategoryId=leaf,necessity=nature)
+    val controls:@Composable ()->Unit={
+        TeaCard {
+            Row(verticalAlignment=Alignment.CenterVertically){Switch(consumes,{consumes=it},modifier=Modifier.testTag("debt-count-consumption"));Text("还款计入月度预算与消费分析",Modifier.weight(1f))}
+            Caption(if(consumes)"以后的实际还款会计入所选消费类别与当月预算，只统计一次。" else "以后的还款不计入月度预算或消费分析；还款进度与统计开关分别保存。")
+            Text("消费用途")
+            ExpenseCategoryPicker(group,leaf){group=it.group.id;leaf=it.leaf.id}
+            ConsumptionTypePicker(nature,consumptionBucket(nature),{nature=it},allowUndecided=old!=null)
+            Caption("此开关只改变消费统计。普通还款仍扣所选账户；建立负债不扣现金。")
+            if(old!=null){
+                Row(verticalAlignment=Alignment.CenterVertically){Checkbox(history,{history=it},modifier=Modifier.testTag("debt-apply-history"));Text("同步应用到历史还款",Modifier.weight(1f))}
+                Caption(if(history)"保存后将重算该负债历史还款的分类、性质和预算统计；付款金额、日期与余额不变。" else "默认只影响以后还款，不自动改变历史统计。")
+            }
+        }
+    }
     if(old?.scheduleType=="LEGACY") {
-        Form("更新负债",busy,close,submit={val d=old.copy(name=name.trim(),categoryId=category,note=note);vm.execute({debt(d,existing)},close)}) {
-            Field("负债名称",name,{name=it});DebtCategoryPicker(s,category,{category=it},vm,busy);Field("备注（可选）",note,{note=it})
+        Form("更新负债",busy,close,submit={val d=metadata(old.copy(name=name.trim(),categoryId=category,note=note));vm.execute({debt(d,existing,history)},close)}) {
+            Field("负债名称",name,{name=it});DebtCategoryPicker(s,category,selectKind,vm,busy);controls();Field("备注（可选）",note,{note=it})
             AmountLine("应还合计",existing.map{it.due}.exactSum())
             Notice("这是旧版记录，原借款金额、费用、期数和还款历史均保留。这里可修改名称、欠款种类和备注。")
         }
@@ -80,10 +101,10 @@ import androidx.compose.ui.unit.sp
     val preview=runCatching{build()}.getOrNull()
     Form(if(old==null)"添加负债" else "更新负债",busy,close,submit={
         val rows=build()
-        val d=Debt(id=id,name=name.trim(),principal=0,purchaseDate=occurred,note=note,categoryId=category,scheduleType=type)
-        vm.execute({debt(d,rows)},close)
+        val d=metadata(Debt(id=id,name=name.trim(),principal=0,purchaseDate=occurred,note=note,categoryId=category,scheduleType=type,archived=old?.archived ?: false))
+        vm.execute({debt(d,rows,history)},close)
     }) {
-        Field("负债名称",name,{name=it});DebtCategoryPicker(s,category,{category=it},vm,busy)
+        Field("负债名称",name,{name=it});DebtCategoryPicker(s,category,selectKind,vm,busy);controls()
         DateInput("欠款发生日 YYYY-MM-DD",occurred){occurred=it}
         Field("还款总期数（1–$MAX_DEBT_INSTALLMENTS）",countText,{value->
             countText=value
@@ -135,17 +156,26 @@ import androidx.compose.ui.unit.sp
     }
 }
 
-@Composable fun DebtDetail(s:Ledger,d:Debt,busy:Boolean,close:()->Unit,open:(Editor)->Unit) {
+@Composable fun DebtDetail(s:Ledger,d:Debt,vm:WalletViewModel,busy:Boolean,close:()->Unit,open:(Editor)->Unit) {
     val rows=s.installments.filter{it.debtId==d.id}.sortedBy{it.number}
     val unpaid=rows.filter{s.payments(it).isEmpty()}
     var page by rememberSaveable{mutableIntStateOf(0)}
     val actualPage=page.coerceIn(0,(rows.size-1).coerceAtLeast(0)/12)
     Form("负债 · ${d.name}",busy,close,confirm=null) {
         Pill(s.debtCategoryName(d));AmountLine("应还合计",rows.map{it.due}.exactSum());AmountLine("剩余待还",unpaid.map{it.due}.exactSum(),Forest)
+        Caption(if(d.categoryGroupId.isEmpty())"消费用途尚未设置，历史统计保持原样。" else "消费用途：${ExpenseTaxonomy.resolve(d.categoryGroupId,d.subcategoryId,"").label} · ${Necessity.valueOf(d.necessity).label}")
         Caption("${rows.size-unpaid.size} / ${rows.size} 期已还 · 欠款发生日 ${d.purchaseDate}")
         if(d.note.isNotBlank())Caption(d.note)
-        OutlinedButton(onClick={open(Editor("debt",d.id))},modifier=Modifier.fillMaxWidth()){Text("修改负债与还款计划")}
-        Caption("还款只扣减所选账户的账本余额，不会重复记为日常消费。")
+        if(d.archived){Notice("该计划已移除；所有历史期次与付款记录保留。恢复后未还期次会重新计入待还。");OutlinedButton(onClick={open(Editor("restoreDebt",d.id))},modifier=Modifier.fillMaxWidth()){Text("恢复计划")}}
+        else {OutlinedButton(onClick={open(Editor("debt",d.id))},modifier=Modifier.fillMaxWidth()){Text("修改负债与还款计划")};TextButton(onClick={open(Editor("removeDebt",d.id))}){Text("删除该计划",color=Red)}}
+        TeaCard {
+            Row(verticalAlignment=Alignment.CenterVertically){
+                Switch(d.repaymentsAreConsumption,{enabled->vm.execute({debt(d.copy(repaymentsAreConsumption=enabled),rows)})},enabled=!busy,modifier=Modifier.testTag("debt-detail-count-consumption"))
+                Text("还款计入月度预算与消费分析",Modifier.weight(1f))
+            }
+            Caption(if(d.repaymentsAreConsumption)"后续还款计入消费分析与当月预算；已有还款保持原样。" else "后续还款不计入消费分析或月度预算；已有还款保持原样。")
+            Caption("毕业后可随时开启。需要重算过去的还款时，在修改计划中勾选“同步应用到历史还款”。")
+        }
         rows.drop(actualPage*12).take(12).forEach { i ->
             val payments=s.payments(i)
             CardBox(color=Page) {
@@ -155,7 +185,7 @@ import androidx.compose.ui.unit.sp
                 if(payments.isNotEmpty()) {
                     Caption("${payments.first().date} 实际还款${if(payments.size>1) " · ${payments.size} 个账户组合" else ""}")
                     payments.forEach{p->TextButton(onClick={open(Editor("detail",p.id))}){Text("${s.accountName(p.accountId)} ¥${Money.format(p.amount)} · 查看记录")}}
-                } else OutlinedButton(onClick={open(Editor("repay",i.id))},modifier=Modifier.testTag("repay${i.number}")){Text("登记还款")}
+                } else if(!d.archived)OutlinedButton(onClick={open(Editor("repay",i.id))},modifier=Modifier.testTag("repay${i.number}")){Text("登记还款")}
             }
         }
         if(rows.size>12)Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){
@@ -168,6 +198,8 @@ import androidx.compose.ui.unit.sp
 }
 
 @Composable fun RepayForm(s:Ledger,i:Installment,vm:WalletViewModel,busy:Boolean,close:()->Unit) {
+    val debt=s.debts.first{it.id==i.debtId}
+    var nature by rememberSaveable{mutableStateOf(debt.necessity)}
     val first=s.accounts.firstOrNull{it.disabledOn==null}?.id
     var selected by rememberSaveable{mutableStateOf<List<String>>(ArrayList(listOfNotNull(first)))}
     var values by rememberSaveable{mutableStateOf<Map<String,String>>(hashMapOf<String,String>().apply{if(first!=null)put(first,Money.plain(i.due))})}
@@ -175,9 +207,12 @@ import androidx.compose.ui.unit.sp
     val total=runCatching{selected.map{Money.parse(values[it] ?: "")}.exactSum()}.getOrNull()
     Form("登记第 ${i.number} 期还款",busy,close,confirm="确认记录还款",submit={
         val allocations=selected.map{it to Money.parse(values[it] ?: "")}
-        vm.execute({repay(i,allocations,date)},close)
+        vm.execute({repay(i,allocations,date,nature)},close)
     }) {
         AmountLine("当期应还",i.due,Forest);DateInput("实际付款日 YYYY-MM-DD",date){date=it}
+        if(debt.categoryGroupId.isNotEmpty())Caption("消费用途：${ExpenseTaxonomy.resolve(debt.categoryGroupId,debt.subcategoryId,"").label}")
+        ConsumptionTypePicker(nature,consumptionBucket(nature),{nature=it},allowUndecided=debt.necessity=="UNDECIDED")
+        Caption(if(debt.repaymentsAreConsumption)"本次还款计入所选用途与消费性质的预算；现金和欠款各减少一次。" else "本次只减少现金与欠款，不再次计入消费。")
         Text("从哪些账户扣款？",fontWeight=FontWeight.SemiBold)
         Caption("勾选一个或多个账户，分别填写本次已支付的金额。")
         if(s.accounts.isEmpty())Notice("请先添加付款账户。",true)

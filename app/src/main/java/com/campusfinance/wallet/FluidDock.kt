@@ -55,6 +55,9 @@ internal class FluidDockController(initial:Float,count:Int) {
 
 /** A single lens covers icon and label; nothing commits while a finger passes another tab. */
 @Composable fun FluidDock(labels:List<String>,icons:List<String>,selectedIndex:Int,onSelect:(Int)->Unit,modifier:Modifier=Modifier) {
+    val activity=androidx.compose.ui.platform.LocalContext.current as? MainActivity
+    SideEffect {activity?.activeDockSlot=selectedIndex}
+    DisposableEffect(activity){onDispose{activity?.activeDockSlot=null}}
     val motion=LocalDisplayState.current;val cardMotion=LocalCardMotion.current
     val dark=LocalWalletColors.current.dark;val ink=Ink;val muted=Muted;val tea=Lime;val page=Page
     val density=LocalDensity.current.density
@@ -124,7 +127,7 @@ internal class FluidDockController(initial:Float,count:Int) {
             labels.forEachIndexed { i,label ->
                 val active=if(drag!=null)drag!!.roundToInt()==i else selectedIndex==i
                 Column(Modifier.weight(1f).height(54.dp).clip(RoundedCornerShape(24.dp))
-                    .onGloballyPositioned{if(i==2)cardMotion?.leafOrigin=CardOrigin(it.boundsInRoot(),null,18f*density)}
+                    .onGloballyPositioned{val bounds=it.boundsInRoot();cardMotion?.dockRectangles?.set(i,bounds);if(i==2)cardMotion?.leafOrigin=CardOrigin(bounds,null,18f*density)}
                     .semantics{selected=active}.clickable(interactionSource=remember{MutableInteractionSource()},indication=null){if(motion.motionEnabled)controller.pulse();selectNow(i)}
                     .testTag("dock-$label"),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(1.dp,Alignment.CenterVertically)) {
                     Box(Modifier.height(29.dp).graphicsLayer {

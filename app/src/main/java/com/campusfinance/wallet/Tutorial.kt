@@ -33,7 +33,7 @@ object TutorialPolicy {
 private data class TutorialPage(val title:String,val art:String,val lines:List<String>)
 private val tutorialPages=listOf(
     TutorialPage("先把账户整理好","share",listOf("在「账本」添加微信、支付宝、银行卡或现金。","首次填写开始余额和日期，之后显示当前余额。","核对有差额可手动校准；初始信息在账户设置中修改。")),
-    TutorialPage("每天记一点，心里更清楚","steep",listOf("点底部茶叶，选择支出、收入、转账或设置。","支出按用途分类，公益捐赠和其他支出可直接选，必要性可选，默认未判断。","固定收支到期会自动记入本地账本，可在明细中撤销。")),
+    TutorialPage("每天记一点，心里更清楚","steep",listOf("点底部记账键，选择支出、收入、记账记录或设置；转账在账本的账户列表中。","新支出默认必要消费，可切换非必要消费；日期默认北京时间今天，也能修改补记。","记账记录可按月份、一级分类、消费性质和账户筛选；点记录查看详情。固定收支到期自动记账，可撤销。")),
     TutorialPage("给未来留一点余地","simmer",listOf("在「规划」安排预算、储蓄和负债；在「分析」回看消费。","填目标金额、已存金额和日期，就能查看每月需存多少。","买前想想分别展示现金、预算、还款和储蓄影响。")),
     TutorialPage("像拨动一滴露水","steep",listOf("总结时段和底部导航既能点，也能左右拖动选择。","点小卡片进入详情；返回会平滑收回原位。","长按卡片主体拖动位置，拖动边缘调整宽高；松手保存。")),
     TutorialPage("安心记录，也记得备份","share",listOf("数据保存在本机，无需注册，不读取支付软件流水。","自动记账只更新记录，不会真的扣款或转账。","设置中可导出备份、重看教程、查看共同设计与免责声明。"))
@@ -44,7 +44,7 @@ private val tutorialPages=listOf(
     var demoTab by rememberSaveable {mutableIntStateOf(0)}
     val page=tutorialPages[step]
     val next by rememberUpdatedState {if(step<tutorialPages.lastIndex)step++ else finish()}
-    BackHandler {if(step>0)step-- else finish()}
+    BackHandler(enabled=LocalEditorPageActive.current) {if(step>0)step-- else finish()}
     Column(Modifier.fillMaxSize().teaWallpaper().then(if(replay)Modifier else Modifier.systemBarsPadding()).padding(horizontal=24.dp,vertical=12.dp).testTag("tutorial"),verticalArrangement=Arrangement.spacedBy(15.dp)) {
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
             Glyph("leaf",modifier=Modifier.size(25.dp));Spacer(Modifier.width(8.dp))

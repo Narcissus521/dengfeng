@@ -41,12 +41,12 @@ private fun percent(value:Double?)=value?.let{String.format(Locale.ROOT,"%.1f%%"
 private fun signedMoney(value:Long)=(if(value>0)"+" else "")+Money.format(value)
 private data class TrendComparison(val point:TrendPoint,val growth:Growth,val share:Double?,val oldShare:Double?,val gross:Boolean)
 private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseReport,val budget:BudgetComparison,
-    val categoryBudgets:Map<String,BudgetComparison>,val budgetMonths:List<Pair<Budget,Long>>,val trend:List<TrendPoint>,val necessityTrend:List<TrendPoint>,val comparisons:Map<String,TrendComparison>,val alerts:AlertResult)
+    val categoryBudgets:Map<String,BudgetComparison>,val budgetMonths:List<Pair<Budget,Long>>,val trend:List<TrendPoint>,val necessityTrend:List<TrendPoint>,val comparisons:Map<String,TrendComparison>,val alerts:AlertResult,val alertReport:ExpenseReport)
 
 @Composable fun AdvancedAnalysisForm(s:Ledger,initialMonth:String,initialKind:String,close:()->Unit,open:(Editor)->Unit) {
     val destination=remember(initialKind){AnalysisDestination.decode(initialKind,initialMonth)}
     val initial=destination.range
-    var section by rememberSaveable{mutableIntStateOf(when(destination.page){"category"->1;"necessity"->2;"trend"->3;"budget"->4;"alerts"->5;"budgetDetail"->7;"necessityDetail"->8;else->0})}
+    var section by rememberSaveable{mutableIntStateOf(when(destination.page){"category"->1;"necessity"->2;"trend"->3;"budget"->4;"alerts"->5;"budgetDetail"->7;"necessityDetail"->8;"calendar"->9;"alertCategory"->10;"budgetCategories"->11;else->0})}
     var mode by rememberSaveable{mutableIntStateOf(when(initialKind.substringBefore(':')){"month"->0;"year"->1;else->2})}
     var month by rememberSaveable{mutableStateOf(minOf(initialMonth,currentMonth()))}
     var from by rememberSaveable{mutableStateOf(initial.start.toString())}
@@ -56,6 +56,7 @@ private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseRepor
     var necessityParent by rememberSaveable{mutableStateOf(destination.group)}
     var necessityLeaf by rememberSaveable{mutableStateOf(destination.leaf)}
     var necessityTrend by rememberSaveable{mutableStateOf(destination.necessity.ifEmpty{Necessity.NECESSARY.name})}
+    var showNecessityFilters by rememberSaveable{mutableStateOf(false)}
     var showRange by rememberSaveable{mutableStateOf(false)}
     var trendGroup by rememberSaveable{mutableStateOf(destination.group)}
     var trendLeaf by rememberSaveable{mutableStateOf(destination.leaf)}
@@ -84,19 +85,21 @@ private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseRepor
                 fun share(v:ExpenseTotals,r:ExpenseReport)=r.total.chart(gross).takeIf{it>0}?.let{v.chart(gross)*100.0/it}
                 p.month to TrendComparison(p,compareSpending(current.net,old.net,previous.total.count>0||previous.total.refundCount>0),share(current,p.report),share(old,previous),gross)
             }
-            AnalysisBundle(index,report,index.budgetComparison(range),ExpenseTaxonomy.groups.associate{it.id to index.budgetComparison(range,it.id)},s.budgets.filter{it.month in range.months}.sortedBy{it.month}.map{b->val m=YearMonth.parse(b.month);b to index.report(ReportRange(maxOf(range.start,m.atDay(1)),minOf(range.end,m.atEndOfMonth()))).total.net},trend,if(section==2||section==8)index.trend(YearMonth.from(range.end),trendCount,necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null},necessity=necessityTrend) else emptyList(),comparisons,index.alerts(YearMonth.parse(alertMonth),AnomalyRules(large,gap)))
+            AnalysisBundle(index,report,index.budgetComparison(range),ExpenseTaxonomy.groups.associate{it.id to index.budgetComparison(range,it.id)},s.budgets.filter{it.month in range.months}.sortedBy{it.month}.map{b->val m=YearMonth.parse(b.month);b to index.report(ReportRange(maxOf(range.start,m.atDay(1)),minOf(range.end,m.atEndOfMonth()))).total.net},trend,if(section==2||section==8)index.trend(YearMonth.from(range.end),trendCount,necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null},necessity=necessityTrend) else emptyList(),comparisons,index.alerts(YearMonth.parse(alertMonth),AnomalyRules(large,gap)),index.report(ReportRange.month(alertMonth)))
         }
     }
     fun back(){if(showRange)showRange=false else if(section==6)section=5 else close()}
-    BackHandler{back()}
-    val title=when(section){1->ExpenseTaxonomy.groups.find{it.id==parent}?.name ?: "分类分析";2->"消费必要性";3->"消费趋势";4->"预算分析";5->"异常消费";6->"异常判断规则";7->"分类预算详情";8->"${Necessity.valueOf(necessityTrend).label}详情";else->"消费总览"}
+    BackHandler(enabled=LocalEditorPageActive.current){back()}
+    val title=when(section){1->ExpenseTaxonomy.groups.find{it.id==parent}?.name ?: "分类分析";2->"消费必要性";3->"消费趋势";4->"预算分析";5->"异常消费";6->"异常判断规则";7->if(parent.isEmpty())"总预算详情" else "分类预算详情";8->"${Necessity.valueOf(necessityTrend).label}详情";9->"消费日历";10->"${ExpenseTaxonomy.groups.first{it.id==parent}.name}关注";11->"全部分类预算";else->"消费总览"}
     Form(title,close={back()},confirm=if(section==6)"保存规则" else null,submit={
         val rules=AnomalyRules(Money.parse(largeText),Money.parse(gapText));large=rules.largeExpense;gap=rules.minimumDifference;alertPage=0
         prefs.edit().putLong("analysis_large_$suffix",large).putLong("analysis_gap_$suffix",gap).apply();section=5
     }) {
-        if(section!=6) {
-            TeaSmall("${range.start} — ${range.end} · ${range.days} 天")
-            TextButton(onClick={showRange=!showRange}){Text(if(showRange)"收起时段设置" else "调整统计时段")}
+        if(section!=6&&section!=10) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                TeaSmall("${range.start} — ${range.end} · ${range.days} 天",Modifier.weight(1f))
+                TextButton(onClick={showRange=!showRange},contentPadding=PaddingValues(horizontal=5.dp,vertical=0.dp),modifier=Modifier.height(36.dp)){Text(if(showRange)"收起" else "时段",fontSize=11.sp)}
+            }
             if(showRange){
             TeaTabs(listOf("月度","年度","自定义"),mode){mode=it}
             if(mode<2)MonthPicker(month,{month=minOf(it,currentMonth())})
@@ -122,7 +125,7 @@ private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseRepor
                 0->{
                     TeaCard(tint=LocalWalletColors.current.hero){AmountLine("净消费总额",report.total.net);AmountLine("日均净消费",report.dailyAverage);TeaSmall("${report.total.count} 笔消费 · ${report.total.refundCount} 笔退款");AmountLine("消费原额",report.total.gross);AmountLine("到账退款",report.total.refunds)}
                     TeaLink("查看消费与退款记录"){open(Editor("analysisRecords",kind=ReportFilter(range).encode()))}
-                    listOf("category" to "分类分析","trend" to "消费趋势","necessity" to "消费必要性","budget" to "预算分析","alerts" to "异常消费").forEach{(page,label)->TeaLink(label){open(analysisEditor(page,range))}}
+                    listOf("category" to "分类分析","trend" to "消费趋势","calendar" to "消费日历","budget" to "预算分析","alerts" to "异常消费").forEach{(page,label)->TeaLink(label){open(analysisEditor(page,range))}}
                 }
                 1->{
                     val group=ExpenseTaxonomy.groups.find{it.id==parent}
@@ -136,25 +139,24 @@ private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseRepor
                         BudgetCard(data.categoryBudgets.getValue(group.id))
                         TeaLink("调整 ${YearMonth.from(range.end)} 分类预算"){open(Editor("categoryBudget",kind=YearMonth.from(range.end).toString()))}
                     }
+                    TeaLink("必要性详细分析","查看必要、非必要、未判断的分类与历史变化"){open(analysisEditor("necessity",range,parent))}
                 }
                 2->{
                     val groups=listOf("")+ExpenseTaxonomy.groups.map{it.id}
+                    val selectedGroup=ExpenseTaxonomy.groups.find{it.id==necessityParent}
+                    val selectedLeaf=selectedGroup?.children?.find{it.id==necessityLeaf}
+                    TeaLink("分析范围",listOfNotNull(selectedGroup?.name ?: "全部分类",selectedLeaf?.name).joinToString(" · "),icon="arrow"){showNecessityFilters=!showNecessityFilters}
+                    if(showNecessityFilters)TeaCard {
                     Select("必要性分析范围",groups,necessityParent,{id->ExpenseTaxonomy.groups.find{it.id==id}?.name ?: "全部分类"}){necessityParent=it;necessityLeaf=""}
                     ExpenseTaxonomy.groups.find{it.id==necessityParent&&it.children.isNotEmpty()}?.let{g->Select("必要性二级分类",listOf("")+g.children.map{it.id},necessityLeaf,{id->g.children.find{it.id==id}?.name ?: "全部二级分类"}){necessityLeaf=it}}
-                    val values=report.necessities(necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null})
-                    val total=report.slice(necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null})
-                    ReportDonut(values.map{it.key to it.value.chart(report.grossBasis)},emptyList(),"消费必要性",{n->open(Editor("analysisRecords",kind=ReportFilter(range,necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null},necessity=n).encode()))},{})
-                    BasisNote(report)
-                    Necessity.entries.forEach{n->val value=values.getValue(n.name)
-                        TeaCard(modifier=Modifier.testTag("necessity-type-${n.name}"),onClick={open(analysisEditor("necessityDetail",range,necessityParent,necessityLeaf,n.name))}){Text(n.label,fontSize=17.sp);AmountLine("净消费",value.net);TeaSmall("${percent(report.share(value,total))} · 查看记录 ›")}
+                    TextButton(onClick={showNecessityFilters=false}){Text("完成筛选")}
                     }
-                    Text("必要性历史变化",fontSize=18.sp);TeaTabs(Necessity.entries.map{it.label},Necessity.entries.indexOfFirst{it.name==necessityTrend}){necessityTrend=Necessity.entries[it].name}
-                    TeaTabs(listOf("6 个月","12 个月"),if(trendCount==6)0 else 1){trendCount=if(it==0)6 else 12}
-                    TrendPlot(data.necessityTrend,trendMonth){trendMonth=it}
-                    data.necessityTrend.find{it.month==trendMonth}?.let{p->AmountLine("${p.month} ${Necessity.valueOf(necessityTrend).label}",p.amount);TeaLink("查看该月对应记录"){open(Editor("analysisRecords",kind=ReportFilter(p.report.range,necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null},necessityTrend).encode()))}}
-                    TeaSmall("未判断单列；不从金额、分类或原有必要／自由预算归属推断。退款跟随原消费的当前必要性。")
+                    NecessityDistribution(report,necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null},open)
+                    TeaLink("必要性历史变化","选择必要、非必要或未判断，查看月度趋势"){open(analysisEditor("necessityDetail",range,necessityParent,necessityLeaf,necessityTrend))}
+                    TeaSmall("点右侧图例查看趋势与明细。未判断单列，历史记录保持原值；退款跟随原消费。")
                 }
                 8->{
+                    TeaTabs(Necessity.entries.map{it.label},Necessity.entries.indexOfFirst{it.name==necessityTrend}){necessityTrend=Necessity.entries[it].name}
                     val value=report.slice(necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null},necessityTrend)
                     val total=report.slice(necessityParent.ifEmpty{null},necessityLeaf.ifEmpty{null})
                     TeaCard{AmountLine("净消费",value.net);TeaSmall("占当前范围 ${percent(report.share(value,total))} · ${value.count} 笔消费 / ${value.refundCount} 笔退款")}
@@ -180,37 +182,61 @@ private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseRepor
                             TeaLink("查看 ${p.month} 对应记录"){open(Editor("analysisRecords",kind=ReportFilter(p.report.range,trendGroup.ifEmpty{null},trendLeaf.ifEmpty{null}).encode()))}
                         }
                     }
+                    data.trend.find{it.month==trendMonth}?.let{SpendingRhythmCard(it.report,trendGroup.ifEmpty{null},trendLeaf.ifEmpty{null},open)}
                     data.trend.forEach{p->TeaLink("${p.month} · ¥${Money.format(p.amount)}",if(p.hasData)"查看该月记录" else "无消费记录"){open(Editor("analysisRecords",kind=ReportFilter(p.report.range,trendGroup.ifEmpty{null},trendLeaf.ifEmpty{null}).encode()))}}
                 }
                 4->{
-                    BudgetCard(data.budget)
-                    TeaSmall("只比较已设置预算的月份；自定义日期使用涉及月份的整月计划，不按天折算。未设置的实际消费单列。")
-                    ExpenseTaxonomy.groups.forEach{g->val cap=data.categoryBudgets.getValue(g.id)
-                        TeaCard(modifier=Modifier.testTag("budget-category-${g.id}"),onClick={open(analysisEditor("budgetDetail",range,g.id))}){Text(g.name,fontSize=16.sp);BudgetCardLines(cap);cap.rate?.let{LinearProgressIndicator(progress={ (it/100).toFloat().coerceIn(0f,1f)},modifier=Modifier.fillMaxWidth())};if(cap.remaining?.let{it<0}==true)AmountLine("超支金额",-cap.remaining!!)}
-                    }
-                    range.months.forEach{m->TeaLink("$m 分类预算设置"){open(Editor("categoryBudget",kind=m))}}
+                    BudgetOverviewCompact(data.index,report,data.budget,data.categoryBudgets,open)
+                }
+                11->{
+                    TeaSmall("净消费金额 · 点分类查看预算与实际对比，不强制设置每类预算。")
+                    BudgetCategoryList(report,data.categoryBudgets,ExpenseTaxonomy.groups,open)
+                    TeaLink("调整分类预算","可只给需要控制的分类设置额度"){open(Editor("categoryBudget",kind=YearMonth.from(range.end).toString()))}
+                    range.months.forEach{m->ConsumptionReviewLink(s,m,open)}
+                }
+                7->{
+                    val group=ExpenseTaxonomy.groups.find{it.id==parent}
+                    val cap=if(group==null)data.budget else data.categoryBudgets.getValue(parent)
+                    BudgetBranchPanel(group?.name ?: "总预算",cap,if(cap.planned==null)report.slice(group?.id).net else cap.actual)
+                    TeaLink("查看${if(group==null)"全部" else "分类"}消费明细"){open(Editor("analysisRecords",kind=ReportFilter(range,group?.id).encode()))}
+                    TeaLink("查看消费趋势"){open(analysisEditor("trend",range,parent))}
+                    if(group!=null)CategorySpendBranches(report,group,open)
+                    range.months.forEach{m->TeaLink("调整 $m 分类预算"){open(Editor("categoryBudget",kind=m))}}
                     if(data.budgetMonths.isNotEmpty()) {
                         val over=data.budgetMonths.count{(b,actual)->actual>b.total}
                         TeaCard{Text("预算月份回看",fontSize=17.sp);TeaSmall("${data.budgetMonths.size} 个有预算月份中，$over 个月在所选日期内已超过其整月总预算。无预算月份不计入比例。");TeaSmall("占比 ${percent(over*100.0/data.budgetMonths.size)}")}
-                        data.budgetMonths.forEach{(b,actual)->TeaLink("${b.month} · 所选日期消费 ¥${Money.format(actual)}","查看该月完整预算、必要／自由额度与记账明细"){open(Editor("budgetOverview",kind=b.month))}}
+                        data.budgetMonths.forEach{(b,actual)->TeaLink("${b.month} · 所选日期消费 ¥${Money.format(actual)}","查看该月完整预算、必要／非必要额度与记账明细"){open(Editor("budgetOverview",kind=b.month))}}
                     }
                 }
-                7->{
-                    val group=ExpenseTaxonomy.groups.first{it.id==parent}
-                    Text(group.name,fontSize=21.sp);BudgetCard(data.categoryBudgets.getValue(parent))
-                    TeaLink("查看分类消费明细"){open(Editor("analysisRecords",kind=ReportFilter(range,parent).encode()))}
-                    TeaLink("查看分类消费趋势"){open(analysisEditor("trend",range,parent))}
-                    range.months.forEach{m->TeaLink("调整 $m 分类预算"){open(Editor("categoryBudget",kind=m))}}
-                }
                 5->{
-                    Text("异常消费关注",fontSize=18.sp);MonthPicker(alertMonth,{alertMonth=minOf(it,currentMonth());alertPage=0})
-                    TeaSmall("本页独立按上述自然月评估，当前月截至今天。提示关注，不代表消费不合理。")
-                    TeaLink("设置判断阈值","大额 ¥${Money.format(large)} · 最低差额 ¥${Money.format(gap)}"){largeText=Money.plain(large);gapText=Money.plain(gap);section=6}
-                    TeaSmall(data.alerts.baselineNote)
+                    MonthPicker(alertMonth,{alertMonth=minOf(it,currentMonth());alertPage=0})
+                    TeaSmall("以下为需关注分类的当月净消费，点分类查看原因与预算对比。")
                     val alerts=data.alerts.alerts
                     if(alerts.isEmpty())TeaSmall("当前规则下没有需要提示的消费。历史不足时仅检查大额和分类预算，不强行比较历史。")
-                    alerts.drop(alertPage*15).take(15).forEach{alert->TeaCard(onClick={open(alertDetailEditor(alert))}){Text(alert.title,fontSize=16.sp,color=Amber);TeaSmall(alert.explanation);TeaSmall("查看相关记录 ›")}}
-                    if(alerts.size>15)Row{TextButton(onClick={alertPage--},enabled=alertPage>0){Text("上一组")};TeaSmall("${alertPage+1} / ${(alerts.size+14)/15}");TextButton(onClick={alertPage++},enabled=(alertPage+1)*15<alerts.size){Text("下一组")}}
+                    val ids=alerts.mapNotNull{data.index.alertGroup(it)}.toSet()
+                    ExpenseTaxonomy.groups.filter{it.id in ids}.sortedByDescending{data.alertReport.groups.getValue(it.id).net}.forEach{g->
+                        TeaCard(modifier=Modifier.testTag("alert-category-${g.id}"),onClick={open(analysisEditor("alertCategory",data.alertReport.range,g.id))}){AmountLine(g.name+"  ›",data.alertReport.groups.getValue(g.id).net)}
+                    }
+                    TeaLink("设置判断阈值"){largeText=Money.plain(large);gapText=Money.plain(gap);section=6}
+                }
+                9->{
+                    val selectedMonth=YearMonth.from(range.end)
+                    val browse:((YearMonth)->Unit)?=if(range.start==selectedMonth.atDay(1)&&range.end==minOf(selectedMonth.atEndOfMonth(),today())) { next->
+                        val nextRange=ReportRange.month(next.toString());rangeKey=nextRange.key;month=next.toString();from=nextRange.start.toString();to=nextRange.end.toString();mode=0
+                    } else null
+                    ExpenseCalendar(s,report,open,browse)
+                }
+                10->{
+                    val group=ExpenseTaxonomy.groups.first{it.id==parent};val cap=data.categoryBudgets.getValue(parent)
+                    TeaSmall("${range.start} — ${range.end}")
+                    BudgetBranchPanel(group.name,cap,if(cap.planned==null)report.groups.getValue(parent).net else cap.actual)
+                    val alerts=data.alerts.alerts.filter{data.index.alertGroup(it)==parent}
+                    if(alerts.isEmpty())TeaSmall("交易或规则已变化，本类当前已无需要提示的项目。")
+                    alerts.forEach{alert->TeaCard(onClick={open(alertDetailEditor(alert))}){Text(alert.title,fontSize=16.sp,color=Amber);TeaSmall(alert.explanation);TeaSmall("查看相关记录 ›")}}
+                    TeaSmall(data.alerts.baselineNote)
+                    CategorySpendBranches(report,group,open)
+                    TeaLink("查看本类交易"){open(Editor("analysisRecords",kind=ReportFilter(range,parent).encode()))}
+                    TeaSmall("异常只提示关注，不代表消费不合理。")
                 }
             }
         }
@@ -235,9 +261,7 @@ private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseRepor
     }}) {
         val diameter=minOf(size.width,size.height);val x=(size.width-diameter)/2;val y=(size.height-diameter)/2
         fun ring(values:List<Pair<String,Long>>,inset:Float,width:Float) {
-            val total=values.map{it.second}.exactSum();val origin=Offset(x+inset,y+inset);val bounds=Size(diameter-2*inset,diameter-2*inset)
-            if(total==0L){drawArc(track,0f,360f,false,origin,bounds,style=Stroke(width));return}
-            var angle=-90f;values.forEach{row->val sweep=(row.second*360.0/total).toFloat();drawArc(expenseChartColor(row.first),angle+.5f,(sweep-1).coerceAtLeast(0f),false,origin,bounds,style=Stroke(width));angle+=sweep}
+            ledgerRing(values.map{expenseChartColor(it.first) to it.second},diameter,x,y,inset,width,track)
         }
         ring(positive,diameter*.09f,diameter*.14f)
         if(inner.isNotEmpty())ring(inside,diameter*.29f,diameter*.11f)
@@ -264,21 +288,30 @@ private data class AnalysisBundle(val index:ExpenseIndex,val report:ExpenseRepor
         }
     }
 }
-@Composable fun AnalysisRecordsForm(s:Ledger,filter:ReportFilter,close:()->Unit,open:(Editor)->Unit) {
+@Composable fun AnalysisRecordsForm(s:Ledger,filter:ReportFilter,close:()->Unit,open:(Editor)->Unit,includeIncome:Boolean=false) {
     var search by rememberSaveable{mutableStateOf("")};var page by rememberSaveable{mutableIntStateOf(0)}
-    val all by produceState<List<Entry>?>(null,s.profile.revision,filter){value=withContext(Dispatchers.Default){ExpenseIndex(s).records(filter)}}
-    val filtered=all?.filter{search.isBlank()||listOf(s.expenseCategory(it).label,it.note,s.accountName(it.accountId)).any{text->text.contains(search,true)}}
-    Form("消费记录",close=close,confirm=null) {
+    val all by produceState<List<Entry>?>(null,s.profile.revision,filter,includeIncome){value=withContext(Dispatchers.Default){
+        val expenses=ExpenseIndex(s).records(filter)
+        val income=if(includeIncome&&filter.groupId==null&&filter.leafId==null&&filter.necessity==null&&filter.consumptionId==null)s.activeEntries.filter{it.kind=="INCOME"&&filter.range.contains(it.date)} else emptyList()
+        (expenses+income).sortedWith(compareByDescending<Entry>{it.date}.thenByDescending{it.id})
+    }}
+    val filtered=all?.filter{search.isBlank()||listOf(if(it.kind=="INCOME")it.category else s.expenseCategory(it).label,it.note,s.accountName(it.accountId)).any{text->text.contains(search,true)}}
+    Form(if(includeIncome)"当天收支" else "消费记录",close=close,confirm=null) {
         TeaSmall("${filter.range.start} — ${filter.range.end}")
         filter.groupId?.let{id->TeaSmall(ExpenseTaxonomy.groups.first{it.id==id}.name)}
         filter.leafId?.let{id->ExpenseTaxonomy.analysisLeaves.find{it.id==id}?.let{TeaSmall(it.name)}}
         filter.necessity?.let{TeaSmall(Necessity.valueOf(it).label)}
+        filter.pattern?.let{TeaSmall("消费节奏 · ${it.label}")}
         Field("搜索分类、账户或备注",search,{search=it;page=0})
         if(filtered==null)TeaSmall("正在整理记录…") else {
-            AmountLine("筛选后净消费",filtered.map{if(it.kind=="REFUND")-it.amount else it.amount}.exactSum())
+            if(includeIncome) {
+                AmountLine("实际收入",filtered.filter{it.kind=="INCOME"}.map{it.amount}.exactSum())
+                AmountLine("支出原额",filtered.filter{it.isConsumptionExpense()}.map{it.amount}.exactSum())
+                val refunds=filtered.filter{it.kind=="REFUND"}.map{it.amount}.exactSum();if(refunds>0)AmountLine("到账退款",refunds)
+            } else AmountLine("筛选后净消费",filtered.map{if(it.kind=="REFUND")-it.amount else it.amount}.exactSum())
             TeaSmall("${filtered.size} 条账户记录；组合扣款的消费笔数按整次统计。退款按到账日期冲减原消费分类。")
             if(filtered.isEmpty())TeaSmall("没有找到记录。")
-            filtered.drop(page*15).take(15).forEach{e->TeaCard(padding=10.dp){EntryRow(e,s){open(Editor("detail",e.id))};if(e.note.isNotBlank())TeaSmall(e.note.take(80));TeaSmall("${s.expenseCategory(e).label} · ${Necessity.valueOf(s.necessityOf(e)).label}")}}
+            filtered.drop(page*15).take(15).forEach{e->TeaCard(padding=10.dp){EntryRow(e,s){open(Editor("detail",e.id))};if(e.note.isNotBlank())TeaSmall(e.note.take(80));TeaSmall(if(e.kind=="INCOME")"${e.category} · 实际到账收入" else "${s.expenseCategory(e).label} · ${Necessity.valueOf(s.necessityOf(e)).label}")}}
             if(filtered.size>15)Row{TextButton(onClick={page--},enabled=page>0){Text("上一组")};TeaSmall("${page+1} / ${(filtered.size+14)/15}");TextButton(onClick={page++},enabled=(page+1)*15<filtered.size){Text("下一组")}}
         }
     }

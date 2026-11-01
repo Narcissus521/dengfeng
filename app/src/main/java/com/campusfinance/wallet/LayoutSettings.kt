@@ -25,7 +25,7 @@ object LayoutPolicy {
     fun percent(size: LayoutSize, custom: Int) = size.preset ?: custom.coerceIn(MIN_PERCENT,MAX_PERCENT)
 }
 enum class OverviewCard(val title:String,private val group:String?=null) {
-    HOME_SUMMARY("茶间小结"), HOME_PURCHASE("买前想想"), HOME_BUDGET("月度预算"),
+    HOME_SUMMARY("收支小结"), HOME_PURCHASE("买前想想"), HOME_BUDGET("月度预算"),
     HOME_DEBT("本月待还","HOME_BALANCES"), HOME_SAVINGS("储蓄已存","HOME_BALANCES"),
     LEDGER_ASSETS("账户总资产"), LEDGER_FIXED_EXPENSE("固定消费","LEDGER_FIXED"),
     LEDGER_FIXED_INCOME("固定收入","LEDGER_FIXED"), LEDGER_MONTH("本月账本"),
@@ -50,8 +50,8 @@ fun DisplayState.cardPercent(card:OverviewCard)=cardSizes[card] ?: layoutPercent
     Form("卡片大小",close=close,confirm=null) {
         TeaCard(tint=Lime) {
             Text("长按卡片，随手安排",fontSize=19.sp,fontWeight=FontWeight.Medium)
-            TeaSmall("在首页、账本、规划或分析，长按卡片主体并保持按住，即可跟随手指在当前页移动，松手吸附并保存；其他卡片会平滑避让。")
-            TeaSmall("长按后拖动两侧调整宽度，拖动下边缘调整高度；点击“完成”结束。取消手势会回到原位，短按仍打开原来的功能。")
+            TeaSmall("长按卡片，在快捷菜单选择“调整布局”后，再长按拖动位置；拖动两侧或下边缘调整大小，松手吸附并保存。")
+            TeaSmall("标准账页首页可在显示与动效中切换为自定义卡片首页；原来保存的卡片大小和位置保留。完成后仍使用该布局。")
         }
         TeaSmall("以首页“本月待还”2×1为基准，整行宽4格。每张卡片可调2—4格宽、1—4格高，文字和明细随形状重新排版；窗口较小时可用高度随之调整。空间不足会自动分页。")
         OutlinedButton(onClick={controller?.resetCardSizes()},modifier=Modifier.fillMaxWidth().testTag("layout-reset-all")) { Text("恢复所有卡片默认大小") }

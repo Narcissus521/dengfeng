@@ -8,13 +8,14 @@ import java.time.LocalTime
 import java.time.YearMonth
 import java.time.ZoneId
 import java.time.ZonedDateTime
+import java.math.BigInteger
 
 val financeZone: ZoneId = ZoneId.of("Asia/Shanghai")
 
 @Entity(tableName = "recurring_rules")
 data class RecurringRule(@PrimaryKey val id: String = newId(), val name: String, val kind: String,
     val amount: Long, val frequency: String = "MONTHLY", val day: Int = 1, val time: String = "08:00",
-    val startDate: String = today().toString(), val category: String = if(kind=="INCOME")incomeCategories.first() else expenseCategories.first(), val bucket: String = "NECESSARY",
+    val startDate: String = today().toString(), val category: String = if(kind=="INCOME")incomeCategories.first() else expenseCategories.first(), val bucket: String = Bucket.UNDECIDED.name,
     val enabled: Boolean = true,
     @ColumnInfo(defaultValue="''") val categoryGroupId:String="",
     @ColumnInfo(defaultValue="''") val subcategoryId:String="",
@@ -40,7 +41,8 @@ data class RecurringRule(@PrimaryKey val id: String = newId(), val name: String,
 data class RecurringAllocation(val ruleId: String, val accountId: String, val amount: Long)
 @Entity(tableName = "recurring_occurrences")
 data class RecurringOccurrence(@PrimaryKey val id: String, val ruleId: String, val date: String,
-    val amount: Long, val kind: String, val status: String = "POSTED", val reason: String = "")
+    val amount: Long, val kind: String, val status: String = "POSTED", val reason: String = "",
+    val postedDate:String?=null)
 @Entity(tableName = "reminder_settings")
 data class ReminderSettings(@PrimaryKey val id: Int = 1, val enabled: Boolean = false,
     val startTime: String = "20:00", val endTime: String = "22:00", val categories: String = "餐饮食品,生活日用,服饰鞋包,学习教育,交通出行,休闲娱乐,其他支出") {
@@ -59,13 +61,34 @@ fun pendingRecurring(s: Ledger, now: ZonedDateTime, limit: Int = 400): List<Pair
             date = rule.dateIn(YearMonth.from(date))
             if (date.toString() < rule.startDate) date = rule.dateIn(YearMonth.from(date).plusMonths(1))
         }
-        while (date <= local.toLocalDate() && pending.size < limit) {
+        var ruleCount=0
+        while (date <= local.toLocalDate() && ruleCount < limit) {
             if (date.atTime(LocalTime.parse(rule.time)).atZone(financeZone) <= local && "${rule.id}@$date" !in done)
-                pending += rule to date
+                {pending += rule to date;ruleCount++}
             date = if (rule.frequency == "DAILY") date.plusDays(1) else rule.dateIn(YearMonth.from(date).plusMonths(1))
         }
     }
-    return pending.sortedBy { (_, date) -> date }
+    return pending.sortedWith(compareBy<Pair<RecurringRule,LocalDate>>{it.second}.thenBy{it.first.time}.thenBy{it.first.id}).take(limit)
+}
+
+fun Ledger.requirePendingRecurring(ruleId:String,date:String,now:ZonedDateTime):RecurringRule {
+    val rule=recurringRules.firstOrNull{it.id==ruleId&&it.enabled} ?: error("固定计划已暂停或不存在")
+    val day=LocalDate.parse(date)
+    require(day.toString()==date&&rule.dueOn(day)&&day.atTime(LocalTime.parse(rule.time)).atZone(financeZone)<=now){"该期次尚未到期或日期不属于此计划"}
+    require(recurringOccurrences.none{it.id=="$ruleId@$date"}){"本次已处理，请勿重复记账"}
+    return rule
+}
+
+/** Integer cents with largest-remainder allocation; stable tie order, no floating money. */
+fun proportionalAllocation(total:Long,original:List<Pair<String,Long>>):List<Pair<String,Long>> {
+    require(total in 1..MAX_MONEY&&original.isNotEmpty()&&original.all{it.second>0}){"金额或分摊比例无效"}
+    require(original.map{it.first}.distinct().size==original.size){"资金账户不能重复"}
+    val sum=original.map{it.second}.exactSum().toBigInteger()
+    val parts=original.map{BigInteger.valueOf(total).multiply(BigInteger.valueOf(it.second)).divideAndRemainder(sum)}
+    val values=parts.map{it[0].longValueExact()}.toMutableList()
+    var left=total-values.exactSum()
+    parts.indices.sortedWith(compareByDescending<Int>{parts[it][1]}.thenBy{it}).forEach{if(left>0){values[it]++;left--}}
+    return original.indices.map{original[it].first to values[it]}.filter{it.second>0}
 }
 
 fun validateRecurring(s: Ledger, now: LocalDate) {
@@ -92,7 +115,7 @@ fun validateRecurring(s: Ledger, now: LocalDate) {
         val entries = s.entries.filter { it.recurringOccurrenceId == o.id }
         if (o.status == "SKIPPED") require(entries.isEmpty()) { "未记账期次不能包含扣款" }
         else {
-            require(entries.isNotEmpty() && entries.all { it.kind == o.kind && it.date == o.date && it.voided == (o.status == "UNDONE") }) { "固定记账须整笔保留或撤销" }
+            require(entries.isNotEmpty() && entries.all { it.kind == o.kind && it.date == (o.postedDate ?: o.date) && it.voided == (o.status == "UNDONE") }) { "固定记账须整笔保留或撤销" }
             require(entries.map { it.accountId }.distinct().size == entries.size && entries.map { it.amount }.exactSum() == o.amount) { "固定记账的账户合计不一致" }
         }
     }

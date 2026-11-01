@@ -26,7 +26,7 @@ data class ExpenseTotals(val gross:Long=0,val refunds:Long=0,val count:Int=0,val
 }
 fun expenseTotals(rows:List<ExpenseRow>):ExpenseTotals {
     val amounts=rows.fold(ExpenseTotals()){a,r->a.plus(r)}
-    return amounts.copy(count=rows.filter{it.entry.kind=="EXPENSE"}.map{it.consumptionId}.distinct().size)
+    return amounts.copy(count=rows.filter{it.entry.isConsumptionExpense()}.map{it.consumptionId}.distinct().size)
 }
 data class ExpenseReport(val range:ReportRange,val rows:List<ExpenseRow>,val total:ExpenseTotals,
     val groups:Map<String,ExpenseTotals>,val leaves:Map<String,ExpenseTotals>,val necessities:Map<String,ExpenseTotals>,val grossBasis:Boolean) {
@@ -36,18 +36,18 @@ data class ExpenseReport(val range:ReportRange,val rows:List<ExpenseRow>,val tot
     fun slice(groupId:String?=null,leafId:String?=null,necessity:String?=null)=expenseTotals(rows.filter{(groupId==null||it.groupId==groupId)&&(leafId==null||it.leafId==leafId)&&(necessity==null||it.necessity==necessity)})
     fun necessities(groupId:String?=null,leafId:String?=null):Map<String,ExpenseTotals> = Necessity.entries.associate{n->n.name to slice(groupId,leafId,n.name)}
 }
-data class ReportFilter(val range:ReportRange,val groupId:String?=null,val leafId:String?=null,val necessity:String?=null,val consumptionId:String?=null) {
-    fun accepts(row:ExpenseRow)=range.contains(row.entry.date)&&(groupId==null||row.groupId==groupId)&&(leafId==null||row.leafId==leafId)&&(necessity==null||row.necessity==necessity)&&(consumptionId==null||row.consumptionId==consumptionId)
-    fun encode()=listOf(range.start,range.end,groupId ?: "",leafId ?: "",necessity ?: "",consumptionId ?: "").joinToString("|")
-    companion object{fun decode(value:String)=value.split('|').let{ReportFilter(ReportRange(LocalDate.parse(it[0]),LocalDate.parse(it[1])),it.getOrNull(2)?.ifEmpty{null},it.getOrNull(3)?.ifEmpty{null},it.getOrNull(4)?.ifEmpty{null},it.getOrNull(5)?.ifEmpty{null})}}
+data class ReportFilter(val range:ReportRange,val groupId:String?=null,val leafId:String?=null,val necessity:String?=null,val consumptionId:String?=null,val pattern:SpendingPattern?=null) {
+    fun accepts(row:ExpenseRow)=range.contains(row.entry.date)&&(groupId==null||row.groupId==groupId)&&(leafId==null||row.leafId==leafId)&&(necessity==null||row.necessity==necessity)&&(consumptionId==null||row.consumptionId==consumptionId)&&(pattern==null||pattern.includes(LocalDate.parse(row.entry.date)))
+    fun encode()=listOf(range.start,range.end,groupId ?: "",leafId ?: "",necessity ?: "",consumptionId ?: "",pattern?.name ?: "").joinToString("|")
+    companion object{fun decode(value:String)=value.split('|').let{ReportFilter(ReportRange(LocalDate.parse(it[0]),LocalDate.parse(it[1])),it.getOrNull(2)?.ifEmpty{null},it.getOrNull(3)?.ifEmpty{null},it.getOrNull(4)?.ifEmpty{null},it.getOrNull(5)?.ifEmpty{null},it.getOrNull(6)?.ifEmpty{null}?.let(SpendingPattern::valueOf))}}
 }
 /** One signed row source for charts, tables, trends and drill-downs. Refunds inherit current original metadata. */
 class ExpenseIndex(val ledger:Ledger) {
     private val originals=ledger.entries.associateBy{it.id}
-    val rows=ledger.activeEntries.filter{it.kind=="EXPENSE"||it.kind=="REFUND"}.map {e->
+    val rows=ledger.activeEntries.filter{it.isConsumptionRecord()}.map {e->
         val source=if(e.kind=="REFUND")originals[e.originalId] ?: e else e
         val category=ExpenseTaxonomy.resolve(source.categoryGroupId,source.subcategoryId,source.category)
-        ExpenseRow(e,category.group.id,if(category.group.children.isEmpty())"${category.group.id}.direct" else category.leaf.id,source.necessity,if(e.kind=="REFUND")-e.amount else e.amount,source.recurringOccurrenceId ?: source.id)
+        ExpenseRow(e,category.group.id,if(category.group.children.isEmpty())"${category.group.id}.direct" else category.leaf.id,source.necessity,if(e.kind=="REFUND")-e.amount else e.amount,source.recurringOccurrenceId ?: source.repaymentId ?: source.id)
     }
     fun report(range:ReportRange):ExpenseReport {
         val selected=rows.filter{range.contains(it.entry.date)}
@@ -99,7 +99,7 @@ data class AlertResult(val alerts:List<SpendingAlert>,val baselineNote:String)
 fun ExpenseIndex.alerts(month:YearMonth,rules:AnomalyRules,now:LocalDate=today()):AlertResult {
     val range=ReportRange.month(month.toString(),now);val current=report(range);val result=mutableListOf<SpendingAlert>()
     val refundedByConsumption=rows.filter{it.entry.kind=="REFUND"&&it.entry.date<=range.end.toString()}.groupBy{it.consumptionId}.mapValues{(_,v)->v.map{-it.signed}.exactSum()}
-    current.rows.filter{it.entry.kind=="EXPENSE"}.groupBy{it.consumptionId}.forEach {(id,parts)->
+    current.rows.filter{it.entry.isConsumptionExpense()}.groupBy{it.consumptionId}.forEach {(id,parts)->
         val remaining=parts.map{it.entry.amount}.exactSum()-(refundedByConsumption[id] ?: 0)
         if(remaining>=rules.largeExpense)result+=SpendingAlert("large","单笔支出较大","截至时段末未退款金额 ¥${Money.format(remaining)}，达到你设置的 ¥${Money.format(rules.largeExpense)} 阈值。组合扣款按同次消费合并。",ReportFilter(range,consumptionId=id),parts.singleOrNull()?.entry?.id)
     }

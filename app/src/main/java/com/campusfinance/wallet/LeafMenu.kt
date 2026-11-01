@@ -34,20 +34,20 @@ import androidx.compose.ui.unit.sp
             AnimatedVisibility(entrance,enter=fadeIn(tween(motion.duration(150)))+slideInVertically(tween(motion.duration(150))){it/5}) {
                 Surface(Modifier.fillMaxWidth().teaGlass(Card,radius=26f).semantics{paneTitle="记录与设置"}.testTag("leaf-menu")
                     .clickable(interactionSource=remember{MutableInteractionSource()},indication=null){},
-                    shape=RoundedCornerShape(26.dp),color=Color.Transparent,shadowElevation=0.dp) {
+                    shape=RoundedCornerShape(10.dp),color=Color.Transparent,shadowElevation=0.dp) {
                     Column(Modifier.padding(16.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
                         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
-                            Glyph("leaf",Forest,Modifier.size(23.dp));Spacer(Modifier.width(8.dp))
+                            Glyph("edit",Forest,Modifier.size(23.dp));Spacer(Modifier.width(8.dp))
                             Text("记录与设置",Modifier.weight(1f),fontSize=17.sp,fontWeight=FontWeight.Medium)
                             TextButton(onClick=close,modifier=Modifier.testTag("leaf-close")){Text("关闭",fontSize=12.sp)}
                         }
-                        listOf(listOf("EXPENSE","INCOME"),listOf("TRANSFER","SETTINGS")).forEach { row ->
+                        listOf(listOf("EXPENSE","INCOME"),listOf("RECORDS","SETTINGS")).forEach { row ->
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
                                 row.forEach { kind ->
-                                    val title=when(kind){"EXPENSE"->"支出";"INCOME"->"收入";"TRANSFER"->"转账";else->"设置"}
-                                    val icon=when(kind){"EXPENSE"->"expense";"INCOME"->"income";"TRANSFER"->"transfer";else->"settings"}
+                                    val title=when(kind){"EXPENSE"->"支出";"INCOME"->"收入";"RECORDS"->"记账记录";else->"设置"}
+                                    val icon=when(kind){"EXPENSE"->"expense";"INCOME"->"income";"RECORDS"->"book";else->"settings"}
                                     Row(Modifier.weight(1f).teaGlass(if(kind=="EXPENSE")Lime else Card,radius=19f)
-                                        .clickable {choose(if(kind=="SETTINGS")Editor("profile") else Editor("transaction",kind=kind))}
+                                        .clickable {choose(when(kind){"SETTINGS"->Editor("profile");"RECORDS"->Editor("recordBook");else->Editor("transaction",kind=kind)})}
                                         .padding(horizontal=16.dp,vertical=20.dp).testTag("leaf-$kind"),
                                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                                         Glyph(icon,Forest,Modifier.size(23.dp));Text(title,fontSize=16.sp)
@@ -55,7 +55,7 @@ import androidx.compose.ui.unit.sp
                                 }
                             }
                         }
-                        TeaSmall("像每日一盏茶，慢慢养成记录习惯。")
+                        TeaSmall("记录实际收支，金额保存后立即更新。")
                     }
                 }
             }

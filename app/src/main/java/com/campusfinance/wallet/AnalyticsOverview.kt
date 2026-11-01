@@ -80,7 +80,7 @@ private data class OverviewAnalysis(val report:ExpenseReport,val trend:List<Tren
             }
         }
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-            listOf(Triple("necessity","消费必要性","必要 / 非必要 / 未判断"),Triple("budget","预算分析",data?.budget?.rate?.let{String.format(Locale.ROOT,"使用 %.1f%%",it)} ?: "查看预算安排"),Triple("alerts","异常消费","查看需关注的变化")).forEach{(page,title,subtitle)->
+            listOf(Triple("calendar","消费日历","每天花了多少"),Triple("budget","预算分析",data?.budget?.planned?.let{"预算 ¥${Money.format(it)}"} ?: "尚未设置预算"),Triple("alerts","异常消费","查看分类金额")).forEach{(page,title,subtitle)->
                 TeaCard(modifier=Modifier.weight(1f).fillMaxHeight().testTag("analysis-entry-$page"),onClick={open(analysisEditor(page,range))},padding=9.dp,spacing=0.dp) {
                     Column(Modifier.fillMaxSize(),horizontalAlignment=Alignment.CenterHorizontally,verticalArrangement=Arrangement.spacedBy(3.dp,Alignment.CenterVertically)) {
                         Text(title,Modifier.fillMaxWidth(),fontSize=12.sp,lineHeight=16.sp,color=Ink,textAlign=TextAlign.Center)

@@ -18,7 +18,7 @@ fun Ledger.spending(end: YearMonth, count: Int): SpendingPeriod {
     val rows=report.rows
     val netBuckets=rows.groupBy{bucketOf(it.entry)}.mapValues{(_,v)->v.map{it.signed}.exactSum()}
     val gross=report.grossBasis||netBuckets.values.any{it<0}
-    val bucketValues=if(gross)rows.filter{it.entry.kind=="EXPENSE"}.groupBy{bucketOf(it.entry)}.mapValues{(_,v)->v.map{it.signed}.exactSum()} else netBuckets
+    val bucketValues=if(gross)rows.filter{it.entry.isConsumptionExpense()}.groupBy{bucketOf(it.entry)}.mapValues{(_,v)->v.map{it.signed}.exactSum()} else netBuckets
     val withBudget=budgets.filter { it.month in periods && it.month<=currentMonth() }
     return SpendingPeriod(periods,report.total.gross,report.total.refunds,report.total.net,
         ExpenseTaxonomy.groups.associate{it.name to report.groups.getValue(it.id).chart(gross)}.filterValues{it>0},
@@ -44,12 +44,13 @@ fun Ledger.teaSummary(kind: String, month: YearMonth = YearMonth.parse(currentMo
     return result.take(50)
 }
 
-data class PurchaseInput(val name: String, val price: Long, val accountId: String, val bucket: String="FREE",
+data class PurchaseInput(val name: String, val price: Long, val accountId: String, val bucket: String=Bucket.UNDECIDED.name,
     val category: String="其他支出", val down: Long=0, val amounts: List<Long> = emptyList(),
     val firstDate: String=today().plusMonths(1).toString(),val categoryGroupId:String="",val subcategoryId:String="")
 data class PurchaseReview(val cashAfter: Long, val accountAfter: Long, val budgetLeft: Long?, val bucketLeft: Long?,
     val savings: Long, val pendingDebt: Long, val payNow: Long, val quotedTotal: Long, val quoteExtra: Long,
-    val installmentCashAfter: Long, val installmentAccountAfter: Long, val onceAdvice: String, val installmentAdvice: String)
+    val installmentCashAfter: Long, val installmentAccountAfter: Long, val onceAdvice: String, val installmentAdvice: String,
+    val installmentBudgetLeft:Long?=null,val installmentBucketLeft:Long?=null,val installmentMonthSpend:Long=0)
 
 fun Ledger.review(p: PurchaseInput, now: LocalDate = today()): PurchaseReview {
     require(p.name.isNotBlank() && p.name.length<=40 && p.price in 1..MAX_MONEY) { "请填写商品名称及有效价格" }
@@ -63,24 +64,27 @@ fun Ledger.review(p: PurchaseInput, now: LocalDate = today()): PurchaseReview {
     val used=usage(YearMonth.from(now).toString())
     val bucketUsed=usage(YearMonth.from(now).toString(),p.bucket)
     val left=budget?.let { it.total-used-p.price }
-    val bucketLeft=budget?.let { (if(p.bucket=="FREE")it.free else it.necessary)-bucketUsed-p.price }
+    val bucketLeft=budget?.amountFor(p.bucket)?.let { it-bucketUsed-p.price }
     val cashAfter=cash()-p.price;val accountAfter=balance(p.accountId)-p.price
     val savings=goals.filterNot { it.archived }.map { it.saved }.exactSum()
     val pending=unpaid().filter { LocalDate.parse(it.date)<=now.plusDays(30) }.map { it.due }.exactSum()
-    fun advice(cash: Long, account: Long): String = when {
+    val installmentMonthSpend=if(p.amounts.isEmpty())p.price else p.down+p.amounts.mapIndexed{index,value->if(YearMonth.from(first.plusMonths(index.toLong()))==YearMonth.from(now))value else 0L}.exactSum()
+    val installmentLeft=budget?.let{it.total-used-installmentMonthSpend}
+    val installmentPart=budget?.amountFor(p.bucket)?.let{it-bucketUsed-installmentMonthSpend}
+    fun advice(cash: Long, account: Long,budgetAfter:Long?=left,partAfter:Long?=bucketLeft): String = when {
         cash<0 || account<0 -> "建议调整付款安排"
-        left!=null && left<0 -> "本月总预算将超出，建议暂缓"
-        bucketLeft!=null && bucketLeft<0 -> "${Bucket.valueOf(p.bucket).label}将超预算，建议缓一缓"
+        budgetAfter!=null && budgetAfter<0 -> "本月总预算将超出，建议暂缓"
+        partAfter!=null && partAfter<0 -> "${Bucket.valueOf(p.bucket).label}将超预算，建议缓一缓"
         cash<pending -> "近期还款高于购买后现金，建议暂缓"
         cash<savings -> "可能影响储蓄安排，建议暂缓"
         budget==null -> "先安排本月预算，再考虑购买"
         else -> "在当前预算范围内，可以考虑"
     }
     val installmentCash=cash()-payNow;val installmentAccount=balance(p.accountId)-payNow
-    var installmentAdvice=advice(installmentCash,installmentAccount)
+    var installmentAdvice=advice(installmentCash,installmentAccount,installmentLeft,installmentPart)
     if(p.amounts.isEmpty())installmentAdvice="填写真实分期报价后再比较"
     if(installmentAdvice=="在当前预算范围内，可以考虑") installmentAdvice=if(quoted>p.price && accountAfter>=0 && cashAfter>=savings)"一次付总额更低，分期会增加未来还款" else "可比较分期，先确认后续收入能覆盖还款"
     return PurchaseReview(cashAfter,accountAfter,left,bucketLeft,savings,
         pending,payNow,quoted,quoted-p.price,
-        installmentCash,installmentAccount,advice(cashAfter,accountAfter),installmentAdvice)
+        installmentCash,installmentAccount,advice(cashAfter,accountAfter),installmentAdvice,installmentLeft,installmentPart,installmentMonthSpend)
 }

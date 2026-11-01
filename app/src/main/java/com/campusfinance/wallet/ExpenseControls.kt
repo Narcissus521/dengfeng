@@ -49,13 +49,6 @@ fun expenseChartColor(id:String):Color {
         TeaSmall(category.group.guide)
     }
 }
-@Composable fun NecessityPicker(value:String,onChange:(String)->Unit) {
-    Column(Modifier.testTag("necessity-picker"),verticalArrangement=Arrangement.spacedBy(4.dp)) {
-        Caption("消费必要性（可不选）")
-        ChoiceRow(Necessity.entries.map{it.name},value,{Necessity.valueOf(it).label},onChange)
-        TeaSmall("由你判断，默认未判断；与预算归属分别记录。")
-    }
-}
 @Composable fun CategoryBudgetForm(s:Ledger,month:String,vm:WalletViewModel,busy:Boolean,close:()->Unit,open:(Editor)->Unit) {
     var values by rememberSaveable{mutableStateOf<Map<String,String>>(HashMap(s.categoryBudgets.filter{it.month==month}.associate{it.categoryGroupId to Money.plain(it.amount)}))}
     val monthly=s.budget(month)
@@ -66,7 +59,7 @@ fun expenseChartColor(id:String):Color {
         if(monthly==null)TeaLink("先设置月度总预算"){open(Editor("budget",kind=month))}
         else {
             AmountLine("月度总预算",monthly.total)
-            TeaSmall("这是总预算的另一种细分，不额外增加预算，也不改动必要／自由预算额度。留空表示未设置，0 表示本月不安排该类消费。")
+            TeaSmall("这是总预算的另一种细分，不额外增加预算，也不改动必要／非必要预算额度。留空表示未设置，0 表示本月不安排该类消费。")
             runCatching{values.values.filter{it.isNotBlank()}.map{Money.parse(it)}.exactSum()}.getOrNull()?.let{AmountLine("已分配分类额度",it)}
             ExpenseTaxonomy.groups.forEach{g->Field("${g.name}（元）",values[g.id] ?: "",{v->values=HashMap(values).apply{put(g.id,v)}},money=true,modifier=Modifier.testTag("category-budget-${g.id}"))}
         }
@@ -77,13 +70,16 @@ fun expenseChartColor(id:String):Color {
     var group by rememberSaveable{mutableStateOf(initial.group.id)}
     var leaf by rememberSaveable{mutableStateOf(if(initial.group.children.isEmpty())"" else initial.leaf.id)}
     var necessity by rememberSaveable{mutableStateOf(e.necessity)}
-    Form("修改分类与必要性",busy,close,submit={
+    var bucket by rememberSaveable{mutableStateOf(e.bucket)}
+    Form("修改分类与消费性质",busy,close,submit={
         val category=ExpenseTaxonomy.explicit(group,leaf)!!
-        vm.execute({entry(e.copy(category=category.group.name,categoryGroupId=group,subcategoryId=leaf,necessity=necessity),"用户调整分类与必要性，金额和付款记录保持原样")},close)
+        vm.execute({expenseMetadata(e.id,category.group.id,leaf,necessity,bucket)},close)
     }) {
-        AmountLine("原消费金额",e.amount)
+        AmountLine("原消费金额",if(e.kind=="REPAYMENT")s.activeEntries.filter{it.kind=="REPAYMENT"&&it.installmentId==e.installmentId}.map{it.amount}.exactSum() else e.amount)
+        if(e.kind=="REPAYMENT")Caption("同一期组合还款的分类与性质一起修改，各账户金额、付款日期及欠款关联不变。")
+        if(e.recurringOccurrenceId!=null)Caption("同一次组合固定消费的分类与性质一起修改，不改变各账户金额。")
         ExpenseCategoryPicker(group,leaf){group=it.group.id;leaf=it.leaf.id}
-        NecessityPicker(necessity){necessity=it}
-        TeaSmall("只调整这条记录的分析属性，相关退款随原消费更新。固定计划以后的记录请在计划设置中调整。")
+        ConsumptionTypePicker(necessity,bucket,{necessity=it;bucket=consumptionBucket(it)})
+        TeaSmall("确认消费性质后，相关退款与历史月份的分项预算一起更新。金额与账户不变；固定计划以后的记录请另行调整。")
     }
 }

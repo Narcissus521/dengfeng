@@ -75,7 +75,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
         when(card) {
             OverviewCard.HOME_SUMMARY->GridTile(card,info,Lime) {GridColumn(info) {
                 GridHeading(card,info)
-                val text=s.teaSummary(listOf("month","half","year")[summary],YearMonth.parse(month))
+                val text=s.teaSummary(listOf("month","half","year")[summary],YearMonth.parse(month)).replace("像每日一盏茶，慢慢养成记账习惯。","从第一笔开始，慢慢养成记账习惯。")
                 if(!info.compact)TeaTabs(listOf("月度","半年","年度"),summary){summary=it}
                 val lines=if(info.compact)2 else if(info.narrow&&!tall)2 else if(tall)5 else 3
                 Text(text,fontSize=if(info.compact)12.sp else 13.sp,lineHeight=if(info.compact)17.sp else 20.sp,color=Ink,maxLines=lines,overflow=TextOverflow.Ellipsis)
@@ -90,13 +90,13 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
                     if(!info.compact)Text(purchase!!.name,fontSize=14.sp,maxLines=1,overflow=TextOverflow.Ellipsis)
                     GridMoney(purchase!!.price,Modifier.fillMaxWidth(),if(info.compact)21 else 25)
                     if(!info.compact)GridNote(runCatching{s.review(purchase!!).onceAdvice}.getOrDefault("点开重新核对购买影响"),lines=if(info.narrow&&!tall)1 else 3,color=Amber)
-                    if(tall){GridDetails("自由消费额度",s.budget(month)?.free ?: 0);GridNote("一次付与分期方案在详情里分别比较。",lines=3)}
+                    if(tall){GridDetails("非必要消费额度",s.budget(month)?.free ?: 0);GridNote("一次付与分期方案在详情里分别比较。",lines=3)}
                 }
                 if(tall){Spacer(Modifier.weight(1f));TeaArt("steep",Modifier.align(Alignment.End).size(78.dp,48.dp))}
             }}
             OverviewCard.HOME_BUDGET->GridTile(card,info,click={open(Editor("budgetOverview",kind=month))}) {GridColumn(info) {
                 GridHeading(card,info,if(info.compact)"预算${if(b!=null&&used>b.total)"超出" else "剩余"}" else card.title)
-                if(b==null){Text(if(info.compact)"先设置预算" else "安排这个月的预算",fontSize=if(info.compact)14.sp else 18.sp,maxLines=2);if(!info.compact)GridNote("必要消费、自由消费各留一份额度",lines=2)}
+                if(b==null){Text(if(info.compact)"先设置预算" else "安排这个月的预算",fontSize=if(info.compact)14.sp else 18.sp,maxLines=2);if(!info.compact)GridNote("必要消费、非必要消费各留一份额度",lines=2)}
                 else {
                     if(!info.compact&&wide)Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
                         GridNote(if(used>b.total)"本月超出" else "本月剩余",Modifier.weight(.8f),lines=1)
@@ -108,7 +108,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
                     if(!info.compact){Progress(used,b.total);GridNote("已用 ¥${Money.format(used)}",lines=1)}
                     if(tall||(wide&&!info.compact&&info.height>170.dp)) {
                         GridDetails("必要剩余",b.necessary-s.usage(month,"NECESSARY"))
-                        GridDetails("自由剩余",b.free-s.usage(month,"FREE"))
+                        GridDetails("非必要剩余",b.free-s.usage(month,"FREE"))
                     }
                     if(tall){GridNote("总预算 ¥${Money.format(b.total)}",lines=2);GridNote("另有 ¥${Money.format(b.total-b.necessary-b.free)} 尚未分配",lines=2)}
                 }
@@ -146,7 +146,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
     var accounts by rememberSaveable{mutableIntStateOf(0)}
     val cards=listOf(OverviewCard.LEDGER_ASSETS,OverviewCard.LEDGER_FIXED_EXPENSE,OverviewCard.LEDGER_FIXED_INCOME,OverviewCard.LEDGER_MONTH)
     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(5.dp)) {
-        TeaTitle("我的账本","一壶分几盏，每笔钱各有去处。")
+        TeaTitle("我的账本","账户余额与固定收支，清楚安排。")
         TeaLink("记账提醒  ${if(s.reminder.enabled)"${s.reminder.startTime}—${s.reminder.endTime}" else "未开启"}"){open(Editor("reminder"))}
         OverviewGrid(cards,Modifier.weight(1f)) { card,info->
             when(card) {
@@ -188,7 +188,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
     val g=s.goals.firstOrNull{!it.archived}
     val due=s.unpaid().filter{it.date.startsWith(month)}.sortedBy{it.date}
     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-        TeaTitle("资金规划","慢煮一壶茶，也慢慢攒到喜欢。")
+        TeaTitle("资金规划","预算、还款与储蓄，一起安排。")
         OverviewGrid(listOf(OverviewCard.PLAN_SAVINGS,OverviewCard.PLAN_DEBT),Modifier.weight(1f)) {card,info->
             GridTile(card,info,click={open(if(card==OverviewCard.PLAN_DEBT)Editor("debtList") else if(g==null)Editor("goal") else Editor("goal",g.id))}) {GridColumn(info) {
                 GridHeading(card,info)
@@ -209,7 +209,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
                 }
             }}
         }
-        TeaLink("月度预算","${month} · 必要消费与自由消费分别安排"){open(Editor("budgetOverview",kind=month))}
+        TeaLink("月度预算","${month} · 必要消费与非必要消费分别安排"){open(Editor("budgetOverview",kind=month))}
     }
 }
 

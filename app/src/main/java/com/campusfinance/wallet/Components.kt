@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.testTag
 
 @Composable fun Glyph(name: String, color: Color = Forest, modifier: Modifier = Modifier.size(22.dp)) {
     Canvas(modifier) {
@@ -38,6 +39,7 @@ import androidx.compose.ui.unit.sp
         fun line(x1:Float,y1:Float,x2:Float,y2:Float) = drawLine(color,Offset(x1*u,y1*u),Offset(x2*u,y2*u),1.7f*u,StrokeCap.Round)
         fun rect(x:Float,y:Float,w:Float,h:Float,r:Float=2f) = drawRoundRect(color,Offset(x*u,y*u),Size(w*u,h*u),CornerRadius(r*u),style=Stroke(1.7f*u))
         when(name) {
+            "edit" -> {val p=Path().apply{moveTo(5*u,16*u);lineTo(15*u,6*u);lineTo(18*u,9*u);lineTo(8*u,19*u);lineTo(5*u,19*u);close()};drawPath(p,color,style=Stroke(1.7f*u));line(4f,22f,20f,22f)}
             "leaf" -> {
                 val p=Path().apply{moveTo(5*u,18*u);cubicTo(3*u,8*u,11*u,3*u,20*u,3*u);cubicTo(22*u,13*u,15*u,21*u,5*u,18*u);close()}
                 drawPath(p,color,style=Stroke(1.6f*u));line(4f,22f,15f,10f)
@@ -66,7 +68,7 @@ import androidx.compose.ui.unit.sp
     }
 }
 @Composable fun TileIcon(name: String, tint: Color = Forest, bg: Color = Pale) {
-    Box(Modifier.size(44.dp).clip(RoundedCornerShape(15.dp)).background(bg),contentAlignment=Alignment.Center) { Glyph(name,tint) }
+    Box(Modifier.size(36.dp).ledgerMaterial(bg,6f,button=true),contentAlignment=Alignment.Center) { Glyph(name,tint) }
 }
 @Composable fun CardBox(modifier: Modifier = Modifier, color: Color = Card, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
     val interactions=remember { MutableInteractionSource() }
@@ -117,10 +119,10 @@ import androidx.compose.ui.unit.sp
         items.forEach { item -> FilterChip(selected=item==selected,onClick={onSelect(item)},label={Text(label(item),fontSize=12.sp)}) }
     }
 }
-@Composable fun BucketChoiceRow(selected:String,onSelect:(String)->Unit) {
+@Composable fun BucketChoiceRow(selected:String,allowUndecided:Boolean=true,onSelect:(String)->Unit) {
     val scheme=MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(8.dp)) {
-        Bucket.entries.forEach { bucket ->
+        Bucket.entries.filter{allowUndecided||it!=Bucket.UNDECIDED}.forEach { bucket ->
             val checked=bucket.name==selected
             FilterChip(selected=checked,onClick={onSelect(bucket.name)},
                 label={Text(bucket.label,fontSize=12.sp,fontWeight=if(checked)FontWeight.SemiBold else FontWeight.Normal)},
@@ -135,15 +137,16 @@ fun entryTitle(e: Entry, s: Ledger): String = when(e.kind) {
     "TRANSFER" -> "${s.accountName(e.accountId)} → ${s.accountName(e.toAccountId)}"
     "REFUND" -> "${s.expenseCategory(e).let{if(it.group.children.isEmpty())it.group.name else it.leaf.name}}退款"
     "ADJUSTMENT" -> "余额校准"
-    "REPAYMENT" -> "负债"
+    "REPAYMENT" -> if(e.categoryGroupId.isEmpty())"负债还款" else s.expenseCategory(e).label
     "EXPENSE" -> s.expenseCategory(e).let{if(it.group.children.isEmpty())it.group.name else it.leaf.name}
     else -> e.category
 }
 @Composable fun EntryRow(e: Entry, s: Ledger, onClick: () -> Unit) {
+    val quickState=LocalLedgerQuickState.current
     val positive = e.kind in listOf("INCOME","REFUND") || (e.kind=="ADJUSTMENT" && e.amount>0)
-    val tint = when { e.voided -> Muted; positive -> Forest; e.kind=="TRANSFER" -> Blue; else -> Ink }
-    val icon = when(e.kind) { "INCOME","REFUND"->"income";"TRANSFER"->"transfer";"REPAYMENT"->"plan";else->when(e.category){"餐饮"->"food";"学习"->"book";else->"bag"} }
-    Row(Modifier.fillMaxWidth().clickable(onClick=onClick).padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+    val tint = when { e.voided -> Muted; positive -> Blue; e.kind=="TRANSFER" -> Blue; else -> Ink }
+    val icon = when(e.kind) { "INCOME","REFUND"->"income";"TRANSFER"->"transfer";"REPAYMENT"->"plan";else->when(s.expenseCategory(e).group.id){"food"->"food";"education"->"book";else->"bag"} }
+    Row(Modifier.fillMaxWidth().ledgerQuickActions(QuickTarget(entryId=e.id)).testTag("quick-entry-${e.id}").clickable{if(quickState?.sourceClickAllowed()!=false)onClick()}.padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         TileIcon(icon,tint)
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Text(entryTitle(e,s),fontSize=14.sp,fontWeight=FontWeight.Medium,color=if(e.voided) Muted else Ink,maxLines=1)
@@ -151,7 +154,7 @@ fun entryTitle(e: Entry, s: Ledger): String = when(e.kind) {
         }
         Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Text("${if(e.kind=="TRANSFER") "" else if(positive) "+" else "−"}${Money.format(kotlin.math.abs(e.amount))}",fontSize=15.sp,fontWeight=FontWeight.SemiBold,color=tint)
-            Caption(if(e.kind in listOf("EXPENSE","REFUND")) Bucket.valueOf(s.bucketOf(e)).label else Kind.valueOf(e.kind).label)
+            Caption(if(e.kind=="REPAYMENT")"负债还款${if(e.repaymentConsumption)" · 已计消费" else ""}" else if(e.isConsumptionRecord())s.consumptionSource(e).let{if(consumptionPending(it.necessity,it.bucket))"历史待确认" else Necessity.valueOf(it.necessity).label} else Kind.valueOf(e.kind).label)
         }
     }
 }

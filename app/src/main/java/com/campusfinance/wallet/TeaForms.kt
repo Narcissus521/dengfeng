@@ -66,12 +66,14 @@ object PurchaseStore {
                 TeaArt(if(kind=="EXPENSE")"pour" else "share",Modifier.size(96.dp,78.dp))
             }
         }
-        TeaSmall("到期自动记账，可撤销。只更新账本，不操作真实付款或收款。")
+        TeaSmall("到期待确认，可撤销。只更新账本，不操作真实付款或收款。")
+        val pending=pendingRecurring(s,java.time.ZonedDateTime.now(financeZone)).count{it.first.kind==kind}
+        if(pending>0)TeaLink("$pending 笔待确认","逐笔修改金额、确认或跳过"){open(Editor("pendingRecurring",kind=kind))}
         if(rules.isEmpty())TeaSmall("还没有固定计划。生活费、话费和每日早餐都可以分别安排。")
         rules.forEach { r ->
             TeaCard(onClick={open(Editor("recurringDetail",r.id))}) {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(r.name,fontSize=15.sp);Text("¥${Money.format(r.amount)}",fontSize=17.sp)}
-                TeaSmall("${if(r.frequency=="DAILY")"每天" else "每月 ${r.day} 日"} ${r.time} · ${if(r.enabled)"自动记账" else "已暂停"} ›")
+                TeaSmall("${if(r.frequency=="DAILY")"每天" else "每月 ${r.day} 日"} ${r.time} · ${if(r.enabled)"待确认记账" else "已暂停"} ›")
             }
         }
     }
@@ -81,9 +83,10 @@ object PurchaseStore {
     Form(r.name,busy,close,confirm="调整计划",submit={open(Editor("recurring",r.id,r.kind))}) {
         TeaCard(tint=LocalWalletColors.current.hero) {
             Text("¥${Money.format(r.amount)}",fontSize=31.sp)
-            TeaSmall("${if(r.frequency=="DAILY")"每天" else "每月 ${r.day} 日"} ${r.time} · ${if(r.enabled)"到期自动记账" else "已暂停"}")
+            TeaSmall("${if(r.frequency=="DAILY")"每天" else "每月 ${r.day} 日"} ${r.time} · ${if(r.enabled)"到期待确认" else "已暂停"}")
             TeaSmall("从 ${r.startDate} 开始 · ${r.category}${if(r.kind=="EXPENSE")" · ${Bucket.valueOf(r.bucket).label}" else ""}")
         }
+        if(r.kind=="EXPENSE"&&consumptionPending(r.necessity,r.bucket))ConsumptionLegacyNotice(r.necessity,r.bucket)
         TeaCard {
             Text(if(r.kind=="EXPENSE")"付款账户" else "到账账户",fontSize=15.sp)
             s.recurringAllocations.filter{it.ruleId==id}.forEach { AmountLine(s.accountName(it.accountId),it.amount) }
@@ -92,7 +95,7 @@ object PurchaseStore {
         if(occurrences.isEmpty())TeaSmall("下一次：${r.nextAfter(java.time.ZonedDateTime.now(financeZone)).toLocalDate()} ${r.time}")
         occurrences.forEach { o ->
             TeaCard {
-                Text(o.date,fontSize=14.sp);TeaSmall(when(o.status){"POSTED"->"本次已自动记账";"UNDONE"->"本次已撤销，不会重复生成";else->"未记账：${o.reason}"})
+                Text(o.date,fontSize=14.sp);TeaSmall(when(o.status){"POSTED"->"本次已确认记账";"UNDONE"->"本次已撤销，不会重复生成";else->"未记账：${o.reason}"})
                 if(o.status=="POSTED")TextButton(onClick={vm.execute({undoRecurring(o.id)})},enabled=!busy){Text("撤销本次")}
             }
         }
@@ -113,7 +116,7 @@ object PurchaseStore {
     var categoryGroup by rememberSaveable{mutableStateOf(initialCategory.group.id)}
     var subcategory by rememberSaveable{mutableStateOf(if(initialCategory.group.children.isEmpty())"" else initialCategory.leaf.id)}
     var necessity by rememberSaveable{mutableStateOf(old?.necessity ?: Necessity.UNDECIDED.name)}
-    var bucket by rememberSaveable{mutableStateOf(old?.bucket ?: "NECESSARY")}
+    var bucket by rememberSaveable{mutableStateOf(old?.bucket ?: Bucket.UNDECIDED.name)}
     var enabled by rememberSaveable{mutableStateOf(old?.enabled ?: true)}
     val previous=s.recurringAllocations.filter{it.ruleId==old?.id}
     var selected by rememberSaveable{mutableStateOf<List<String>>(ArrayList(previous.map{it.accountId}.ifEmpty{listOfNotNull(defaultAccount ?: s.accounts.firstOrNull{it.disabledOn==null}?.id)}))}
@@ -132,7 +135,7 @@ object PurchaseStore {
                     if(kind=="EXPENSE")categoryGroup else "",if(kind=="EXPENSE")subcategory else "",if(kind=="EXPENSE")necessity else Necessity.UNDECIDED.name);val a=allocations();vm.execute({recurring(r,a)},close)}
             }
         }) {
-        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){TeaSmall(listOf("名称与金额","日期与消费种类","资金账户","自动记账")[step]);TeaSmall("${step+1} / 4")}
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){TeaSmall(listOf("名称与金额","日期与消费种类","资金账户","待确认记账")[step]);TeaSmall("${step+1} / 4")}
         when(step) {
             0->{Field("计划名称",name,{name=it});Field("每次金额（元）",amount,{amount=it},money=true)}
             1->{
@@ -142,9 +145,8 @@ object PurchaseStore {
                 DateInput("开始日期",start){start=it}
                 if(kind=="EXPENSE") {
                     ExpenseCategoryPicker(categoryGroup,subcategory){categoryGroup=it.group.id;subcategory=it.leaf.id}
-                    NecessityPicker(necessity){necessity=it}
+                    ConsumptionTypePicker(necessity,bucket,{necessity=it;bucket=consumptionBucket(it)})
                 } else Select("收入来源",incomeCategories,category,{it}){category=it}
-                if(kind=="EXPENSE")Select("消费归属",Bucket.entries.toList(),Bucket.valueOf(bucket),{it.label}){bucket=it.name}
             }
             2->{
                 TeaSmall(if(kind=="INCOME")"为不同到账账户分别建立收入计划。" else "可组合多个账户，各账户金额相加等于每次消费金额。")
@@ -165,11 +167,11 @@ object PurchaseStore {
                 if(selected.isEmpty())Notice("先到账本添加资金账户，再设置固定收支。",true)
             }
             else->{
-                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("到期自动记账");Switch(checked=enabled,onCheckedChange={enabled=it})}
-                TeaSmall("按北京时间安排，遇到当月没有的日期，在月末记账。每一期只记一次，撤销后不自动重记。")
+                Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("到期待确认");Switch(checked=enabled,onCheckedChange={enabled=it})}
+                TeaSmall("按北京时间安排，遇到当月没有的日期，在月末到期。每一期只记一次，撤销后不自动重记。")
                 TeaSmall("暂停后重新启用，从当天或你设定的未来日期恢复，不补记暂停期间的记录。")
-                TeaSmall("系统可能延迟后台唤醒，重新打开 App 会补记已到期的计划。只操作账本，不发起实际扣款。")
-                if(start<today().toString())Notice("开始日期在过去，保存后会补记已到期的固定收支，请核对日期。",true)
+                TeaSmall("打开 App 时会询问到期计划，可修改本次金额，不会后台补记或发起实际扣款。")
+                if(start<today().toString())Notice("开始日期在过去，已到期的期次会列入待确认清单，不会自动记账。",true)
                 TeaArt(if(kind=="INCOME")"share" else "pour",Modifier.size(120.dp,85.dp).align(Alignment.End))
             }
         }
@@ -189,10 +191,10 @@ object PurchaseStore {
         val r=ReminderSettings(enabled=enabled,startTime=start,endTime=end,categories=selected.joinToString(","));LocalTime.parse(start);LocalTime.parse(end)
         require(!enabled||selected.isNotEmpty()){"请至少选择一种消费"};vm.execute({reminder(r)},close)
     }) {
-        TeaSmall("每日一盏茶，也记下今天的开销。")
+        TeaSmall("在设定时段内，用通知提醒你记录收支。")
         Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("每天提醒我");Switch(enabled,onCheckedChange={enabled=it})}
         Row(horizontalArrangement=Arrangement.spacedBy(10.dp)){Field("开始时间 HH:mm",start,{start=it},modifier=Modifier.weight(1f));Field("结束时间 HH:mm",end,{end=it},modifier=Modifier.weight(1f))}
-        TeaSmall("时段内提醒一次；当日已手动记录所选消费则不再提醒。结束早于开始时，表示跨到次日。")
+        TeaSmall("时段内每天通知一次，已记过账也会提醒；错过时段不补发。结束早于开始时表示跨到次日。")
         Text("提醒记录哪些消费",fontSize=15.sp)
         expenseCategories.filterNot{it=="转账手续费"}.chunked(2).forEach { row ->
             Row(Modifier.fillMaxWidth()) { row.forEach { category ->
@@ -205,7 +207,7 @@ object PurchaseStore {
         if(!allowed)OutlinedButton(onClick={if(Build.VERSION.SDK_INT>=33)permission.launch(Manifest.permission.POST_NOTIFICATIONS) else {
             context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE,context.packageName))
         }}){Text("允许记账通知")}
-        TeaSmall("提醒只提醒你记录；固定消费才会按计划自动记账。系统省电设置可能延迟通知。")
+        TeaSmall("提醒只提醒你记录；固定收支须由你确认后才记账。系统省电设置可能延迟通知。")
     }
 }
 
@@ -217,7 +219,7 @@ object PurchaseStore {
     val initialCategory=old?.let{ExpenseTaxonomy.resolve(it.categoryGroupId,it.subcategoryId,it.category)} ?: ExpenseTaxonomy.default
     var categoryGroup by rememberSaveable{mutableStateOf(initialCategory.group.id)}
     var subcategory by rememberSaveable{mutableStateOf(if(initialCategory.group.children.isEmpty())"" else initialCategory.leaf.id)}
-    var bucket by rememberSaveable{mutableStateOf(old?.bucket ?: "FREE")}
+    var bucket by rememberSaveable{mutableStateOf(old?.bucket ?: Bucket.UNDECIDED.name)}
     var down by rememberSaveable{mutableStateOf(old?.down?.let{Money.plain(it)} ?: "0.00")};var count by rememberSaveable{mutableStateOf((old?.amounts?.size?.takeIf{it>0} ?: 3).toString())}
     var equal by rememberSaveable{mutableStateOf((old?.amounts?.distinct()?.size ?: 0)<=1)}
     var equalAmount by rememberSaveable{mutableStateOf(old?.amounts?.firstOrNull()?.let{Money.plain(it)} ?: "")}
@@ -240,7 +242,7 @@ object PurchaseStore {
         TeaSmall("${listOf("商品与付款账户","分期购买方案","各期金额")[step]} · ${step+1} / 3")
         when(step){
             0->{Field("商品名称",name,{name=it});Field("商品价格（元）",price,{price=it},money=true);Select("付款账户",s.accounts.filter{it.disabledOn==null},s.accounts.find{it.id==account},{it.name}){account=it.id}
-                ExpenseCategoryPicker(categoryGroup,subcategory){categoryGroup=it.group.id;subcategory=it.leaf.id};Select("预算归属",Bucket.entries.toList(),Bucket.valueOf(bucket),{it.label}){bucket=it.name}}
+                ExpenseCategoryPicker(categoryGroup,subcategory){categoryGroup=it.group.id;subcategory=it.leaf.id};ConsumptionTypePicker(consumptionNecessity(bucket),bucket,{bucket=consumptionBucket(it)})}
             1->{
                 Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.SpaceBetween){Text("同时比较分期购买");Switch(compare,onCheckedChange={compare=it})}
                 if(compare){Field("首付（元）",down,{down=it},money=true);Field("还款总期数（1–120）",count,{count=it},money=true);DateInput("首期还款日",first){first=it};TeaTabs(listOf("每月相同","每期分别填写"),if(equal)0 else 1){equal=it==0}}
@@ -251,7 +253,7 @@ object PurchaseStore {
                 else (0 until (count.toIntOrNull() ?: 0).coerceIn(0,120)).forEach { index ->
                     Field("第 ${index+1} 期应付（元）",values.getOrElse(index){""},{v->values=ArrayList(List(maxOf(values.size,index+1)){i->if(i==index)v else values.getOrElse(i){equalAmount}})},money=true)
                 }
-                TeaSmall("按商家给出的应付金额填写，不自行推算利率。商品全价占用本次消费预算，还款不重复算商品消费。")
+                TeaSmall("按商家给出的应付金额填写，不自行推算利率。一次付按商品全价计消费；分期按首付与每月实际还款计入相应月份，不重复计商品全价。")
             }
         }
         if(step>0)TextButton(onClick={step--}){Text("上一步")}
@@ -266,11 +268,15 @@ object PurchaseStore {
         else when(mode) {
             "cash"->{AmountLine("购买后账户总资产",result.cashAfter);AmountLine(s.accountName(p.accountId),result.accountAfter)
                 result.budgetLeft?.let{AmountLine("本月总预算剩余",it,if(it<0)Red else Ink)};result.bucketLeft?.let{AmountLine("${Bucket.valueOf(p.bucket).label}剩余",it,if(it<0)Red else Ink)}
+                if(p.bucket==Bucket.UNDECIDED.name)TeaSmall("消费性质未判断，仅计入总预算，暂不计入必要或非必要分项。")
                 TeaSmall("预算按整件商品价格计算。这里仅模拟，不生成交易。")}
             "install"->{
                 if(p.amounts.isEmpty())TeaSmall("尚未填写分期报价。") else {
                     AmountLine("现在需付",result.payNow);AmountLine("购买后账户总资产",result.installmentCashAfter);AmountLine("所选付款账户余额",result.installmentAccountAfter)
-                    TeaSmall("首期 ${p.firstDate} · 商品消费预算仍按全价计算")
+                    TeaSmall("首期 ${p.firstDate} · 还款计入发生月份的消费与预算")
+                    AmountLine("本月预计计入消费",result.installmentMonthSpend)
+                    result.installmentBudgetLeft?.let{AmountLine("分期后本月预算剩余",it,if(it<0)Red else Ink)}
+                    result.installmentBucketLeft?.let{AmountLine("${Bucket.valueOf(p.bucket).label}剩余",it,if(it<0)Red else Ink)}
                     p.amounts.forEachIndexed { i,amount -> AmountLine("第 ${i+1} 期 · ${LocalDate.parse(p.firstDate).plusMonths(i.toLong())}",amount) }
                 }
             }

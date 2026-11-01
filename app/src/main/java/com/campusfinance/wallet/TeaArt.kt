@@ -16,7 +16,8 @@ import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.drawscope.scale
 
 /** Quiet native vector scenes. Steam drifts once; it never keeps an idle screen redrawing. */
-@Composable fun TeaArt(scene:String,modifier:Modifier=Modifier) {
+@Composable fun TeaArt(scene:String,modifier:Modifier=Modifier) { /* Old artwork is intentionally retired by the approved material redesign. */ }
+@Composable private fun LegacyTeaArt(scene:String,modifier:Modifier=Modifier) {
     val dark=LocalWalletColors.current.dark
     val motion=LocalDisplayState.current.motionEnabled
     val drift=remember(scene) { Animatable(0f) }

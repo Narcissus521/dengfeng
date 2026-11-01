@@ -7,6 +7,12 @@ import android.os.Build
 import android.view.Window
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -14,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowInsetsControllerCompat
 
 enum class ThemeMode(val label: String) {
@@ -31,53 +38,33 @@ data class WalletColors(
 )
 
 private val lightScheme = lightColorScheme(
-    primary=Color(0xFF5F7086), onPrimary=Color.White,
-    secondary=Color(0xFF5F7086), onSecondary=Color.White,
-    secondaryContainer=Color(0xFFF0F4ED), onSecondaryContainer=Color(0xFF50634D),
-    primaryContainer=Color(0xFFE3EBDD), onPrimaryContainer=Color(0xFF354B68),
-    tertiary=Color(0xFF577DAA), onTertiary=Color.White,
-    tertiaryContainer=Color(0xFFE3EDFA), onTertiaryContainer=Color(0xFF334C6C),
-    background=Color(0xFFF0F2ED), onBackground=Color(0xFF303D3B),
-    surface=Color.White, onSurface=Color(0xFF303D3B),
-    surfaceVariant=Color(0xFFE8EDF3), onSurfaceVariant=Color(0xFF596879),
-    surfaceDim=Color(0xFFDDE3EB), surfaceBright=Color(0xFFFAFCFF),
-    surfaceContainerLowest=Color.White, surfaceContainerLow=Color(0xFFF4F7FB),
-    surfaceContainer=Color(0xFFEEF2F7), surfaceContainerHigh=Color(0xFFE8EDF3),
-    surfaceContainerHighest=Color(0xFFE2E8F0),
-    surfaceTint=Color(0xFF5F7086), inverseSurface=Color(0xFF303D3B),
-    inverseOnSurface=Color(0xFFF0F4FA), inversePrimary=Color(0xFFBDCDE2),
-    outline=Color(0xFF8492A3), outlineVariant=Color(0xFFDCE4DA),
-    error=Color(0xFFB13F34), onError=Color.White,
-    errorContainer=Color(0xFFFFDAD3), onErrorContainer=Color(0xFF410600)
-)
+    primary=Color(0xFF863E4C),onPrimary=Color(0xFFFFFAF5),secondary=Color(0xFF706B5F),onSecondary=Color(0xFFFFFDF6),
+    primaryContainer=Color(0xFFE9DADD),onPrimaryContainer=Color(0xFF68303D),secondaryContainer=Color(0xFFECE9E1),onSecondaryContainer=Color(0xFF47443C),
+    tertiary=Color(0xFF526D85),onTertiary=Color(0xFFF7FAFC),tertiaryContainer=Color(0xFFE4EBF0),onTertiaryContainer=Color(0xFF304A62),
+    background=Color(0xFFF2F1EB),onBackground=Color(0xFF343438),surface=Color(0xFFFFFDF6),onSurface=Color(0xFF343438),
+    surfaceVariant=Color(0xFFE8E5DC),onSurfaceVariant=Color(0xFF625F56),surfaceDim=Color(0xFFDEDAD0),surfaceBright=Color(0xFFFFFDF8),
+    surfaceContainerLowest=Color(0xFFFFFDF8),surfaceContainerLow=Color(0xFFF7F5EE),surfaceContainer=Color(0xFFEEECE4),
+    surfaceContainerHigh=Color(0xFFE7E4DB),surfaceContainerHighest=Color(0xFFDDD9CE),surfaceTint=Color(0xFF863E4C),
+    inverseSurface=Color(0xFF3E4042),inverseOnSurface=Color(0xFFF4F3EF),inversePrimary=Color(0xFFD8A4B0),
+    outline=Color(0xFF918A7D),outlineVariant=Color(0xFFCCC6B8),error=Color(0xFFAC3D32),onError=Color(0xFFFFFAF6),
+    errorContainer=Color(0xFFFFDAD3),onErrorContainer=Color(0xFF410600))
 private val darkScheme = darkColorScheme(
-    primary=Color(0xFFBDCDE2), onPrimary=Color(0xFF253344),
-    secondary=Color(0xFFBDCDE2), onSecondary=Color(0xFF253344),
-    secondaryContainer=Color(0xFF30383C), onSecondaryContainer=Color(0xFFD6E3CC),
-    primaryContainer=Color(0xFF3B4447), onPrimaryContainer=Color(0xFFE3EBDD),
-    tertiary=Color(0xFFACC8EA), onTertiary=Color(0xFF233B59),
-    tertiaryContainer=Color(0xFF334A67), onTertiaryContainer=Color(0xFFDCEAFF),
-    background=Color(0xFF111A1C), onBackground=Color(0xFFE8EDE9),
-    surface=Color(0xFF293938), onSurface=Color(0xFFE8EDE9),
-    surfaceVariant=Color(0xFF434D5B), onSurfaceVariant=Color(0xFFBAC6BE),
-    surfaceDim=Color(0xFF1B1E20), surfaceBright=Color(0xFF3B424C),
-    surfaceContainerLowest=Color(0xFF111418), surfaceContainerLow=Color(0xFF20242A),
-    surfaceContainer=Color(0xFF292F37), surfaceContainerHigh=Color(0xFF323A44),
-    surfaceContainerHighest=Color(0xFF3D4652),
-    surfaceTint=Color(0xFFBDCDE2), inverseSurface=Color(0xFFE8EDE9),
-    inverseOnSurface=Color(0xFF303D3B), inversePrimary=Color(0xFF5F7086),
-    outline=Color(0xFF8E9BAB), outlineVariant=Color(0xFF475158),
-    error=Color(0xFFFFB4A8), onError=Color(0xFF650F08),
-    errorContainer=Color(0xFF85251B), onErrorContainer=Color(0xFFFFDAD3)
-)
-private val lightColors = WalletColors(false,lightScheme.primary,lightScheme.onSurface,Color(0xFF465C55),
-    lightScheme.background,lightScheme.surface,lightScheme.primaryContainer,lightScheme.secondaryContainer,
-    Color(0xFF8A5C17),Color(0xFFFFF3DF),lightScheme.error,lightScheme.tertiary,
-    Color(0xFFECF1EB),Color(0xFFE3EBDD),lightScheme)
-private val darkColors = WalletColors(true,darkScheme.primary,darkScheme.onSurface,Color(0xFFBAC6BE),
-    darkScheme.background,darkScheme.surface,darkScheme.primaryContainer,darkScheme.secondaryContainer,
-    Color(0xFFF0CB8A),Color(0xFF3A3020),darkScheme.error,darkScheme.tertiary,
-    Color(0xFF333A3D),Color(0xFF3B4447),darkScheme)
+    primary=Color(0xFFD8A4B0),onPrimary=Color(0xFF44232C),secondary=Color(0xFFCBC3AF),onSecondary=Color(0xFF353126),
+    primaryContainer=Color(0xFF59404A),onPrimaryContainer=Color(0xFFF5D9E0),secondaryContainer=Color(0xFF403D35),onSecondaryContainer=Color(0xFFE5DFCE),
+    tertiary=Color(0xFFB2C9DE),onTertiary=Color(0xFF24394D),tertiaryContainer=Color(0xFF34495C),onTertiaryContainer=Color(0xFFDDEAF5),
+    background=Color(0xFF242523),onBackground=Color(0xFFECE8DD),surface=Color(0xFF36342E),onSurface=Color(0xFFECE8DD),
+    surfaceVariant=Color(0xFF48443A),onSurfaceVariant=Color(0xFFC8C0B0),surfaceDim=Color(0xFF242320),surfaceBright=Color(0xFF454137),
+    surfaceContainerLowest=Color(0xFF22221F),surfaceContainerLow=Color(0xFF2D2C27),surfaceContainer=Color(0xFF35322C),
+    surfaceContainerHigh=Color(0xFF403B33),surfaceContainerHighest=Color(0xFF4B453A),surfaceTint=Color(0xFFD8A4B0),
+    inverseSurface=Color(0xFFECE8DD),inverseOnSurface=Color(0xFF343438),inversePrimary=Color(0xFF863E4C),
+    outline=Color(0xFFA59A86),outlineVariant=Color(0xFF645D4E),error=Color(0xFFFFB4A8),onError=Color(0xFF650F08),
+    errorContainer=Color(0xFF702B23),onErrorContainer=Color(0xFFFFDAD3))
+private val lightColors=WalletColors(false,lightScheme.primary,lightScheme.onSurface,Color(0xFF625F56),
+    lightScheme.background,lightScheme.surface,Color(0xFFE9DADD),Color(0xFFECE9E1),Color(0xFF8A5C17),Color(0xFFFFF3DF),
+    lightScheme.error,lightScheme.tertiary,Color(0xFFE4E0D6),Color(0xFFF0E4E4),lightScheme)
+private val darkColors=WalletColors(true,darkScheme.primary,darkScheme.onSurface,Color(0xFFC8C0B0),
+    darkScheme.background,darkScheme.surface,Color(0xFF59404A),Color(0xFF403D35),Color(0xFFF0CB8A),Color(0xFF3A3020),
+    darkScheme.error,darkScheme.tertiary,Color(0xFF302F2A),Color(0xFF4A373D),darkScheme)
 
 val LocalWalletColors = staticCompositionLocalOf { lightColors }
 val Forest: Color @Composable get() = LocalWalletColors.current.primary
@@ -102,7 +89,8 @@ private tailrec fun Context.activity(): Activity? = when(this) {
     val colors=LocalWalletColors.current
     SideEffect {
         window?.let {
-            it.statusBarColor=colors.page.toArgb()
+            it.statusBarColor=(if(colors.dark)Color(0xFF303334) else Color(0xFF47494B)).toArgb()
+            if(Build.VERSION.SDK_INT>=29)it.isStatusBarContrastEnforced=false
             // Android 8.0 only supports white navigation icons.
             it.navigationBarColor=if(Build.VERSION.SDK_INT<27)Color(0xFF20262E).toArgb() else colors.card.toArgb()
             if(Build.VERSION.SDK_INT<27) {
@@ -114,7 +102,7 @@ private tailrec fun Context.activity(): Activity? = when(this) {
                 }
             }
             WindowInsetsControllerCompat(it,it.decorView).apply {
-                isAppearanceLightStatusBars=!colors.dark
+                isAppearanceLightStatusBars=false
                 isAppearanceLightNavigationBars=!colors.dark && Build.VERSION.SDK_INT>=27
             }
         }
@@ -132,8 +120,14 @@ private tailrec fun Context.activity(): Activity? = when(this) {
     val window=LocalContext.current.activity()?.window
     CompositionLocalProvider(LocalWalletColors provides colors) {
         WindowAppearance(window)
-        MaterialTheme(colorScheme=colors.scheme,typography=Typography()) {
-            OpticalBackdrop { Surface(Modifier.fillMaxSize().testTag(if(dark)"theme-dark" else "theme-light"),color=Color.Transparent,contentColor=colors.ink,content=content) }
+        MaterialTheme(colorScheme=colors.scheme,typography=Typography(), shapes=Shapes(extraSmall=androidx.compose.foundation.shape.RoundedCornerShape(4.dp),small=androidx.compose.foundation.shape.RoundedCornerShape(6.dp),medium=androidx.compose.foundation.shape.RoundedCornerShape(8.dp),large=androidx.compose.foundation.shape.RoundedCornerShape(10.dp),extraLarge=androidx.compose.foundation.shape.RoundedCornerShape(12.dp))) {
+            Surface(Modifier.fillMaxSize().testTag(if(dark)"theme-dark" else "theme-light"),color=Color.Transparent,contentColor=colors.ink) {
+                Box(Modifier.fillMaxSize()) {
+                    content()
+                    // Android 15+ draws transparent status bars: paint the actual inset without moving content.
+                    Box(Modifier.align(Alignment.TopCenter).fillMaxWidth().windowInsetsTopHeight(WindowInsets.statusBars).ledgerHeader())
+                }
+            }
         }
     }
 }

@@ -41,7 +41,7 @@ import java.time.YearMonth
 @Composable fun TeaDock(selected:Int,navigate:(Int)->Unit,record:()->Unit,leafSelected:Boolean=false) {
     val slot=if(leafSelected)2 else if(selected<2)selected else selected+1
     GlassSelector(listOf("首页","账本","记账","规划","分析"),slot,{if(it==2)record() else navigate(if(it<2)it else it-1)},
-        Modifier.padding(horizontal=10.dp,vertical=7.dp),listOf("home","wallet","leaf","plan","chart"))
+        Modifier,listOf("home","wallet","edit","plan","chart"))
 }
 
 @Composable fun TeaShell(s:Ledger,month:String,onMonth:(String)->Unit,tab:Int,onTab:(Int)->Unit,open:(Editor)->Unit,leaf:()->Unit,embedded:Boolean=false,active:Boolean=true) {
@@ -49,6 +49,8 @@ import java.time.YearMonth
     val pageStates=rememberSaveableStateHolder()
     var resizing by remember { mutableStateOf<OverviewCard?>(null) }
     LaunchedEffect(tab,active){resizing=null}
+    val quickState=LocalLedgerQuickState.current
+    LaunchedEffect(active,quickState?.editCard){if(active)quickState?.editCard?.let{resizing=it;quickState.editCard=null}}
     BackHandler(enabled=active&&resizing!=null){resizing=null}
     Column(Modifier.fillMaxSize().then(if(embedded)Modifier else Modifier.teaWallpaper().systemBarsPadding())) {
         if(!embedded) {
@@ -75,7 +77,7 @@ import java.time.YearMonth
     }
 }
 
-@Composable private fun TeaHome(s:Ledger,month:String,open:(Editor)->Unit,navigate:(Int)->Unit) = GridTeaHome(s,month,open)
+@Composable private fun TeaHome(s:Ledger,month:String,open:(Editor)->Unit,navigate:(Int)->Unit) = if(LocalDisplayState.current.customHome||LocalResizingCard.current!=null)GridTeaHome(s,month,open) else LedgerHome(s,month,open)
 
 @Composable fun MonthPicker(month:String,onMonth:(String)->Unit) {
     val ym=YearMonth.parse(month)

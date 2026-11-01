@@ -18,7 +18,7 @@ import kotlinx.coroutines.launch
 import java.time.LocalTime
 import java.time.ZonedDateTime
 
-/** Inexact system alarm plus idempotent foreground catch-up; no access to real payment services. */
+/** Notifications only. Financial entries always require an explicit foreground confirmation. */
 object WalletAutomation {
     private const val CHANNEL="tea-journal"
     private fun alarmIntent(context: Context) = PendingIntent.getBroadcast(context,701,
@@ -28,54 +28,48 @@ object WalletAutomation {
             context.getSystemService(NotificationManager::class.java).areNotificationsEnabled()
     suspend fun run(context: Context, notify: Boolean = true) {
         val prefs=context.getSharedPreferences("wallet_settings",Context.MODE_PRIVATE)
+        if(!prefs.getBoolean(ConsentPolicy.KEY,false))return
         val mode=prefs.getString("mode",null) ?: return
         val db=WalletDatabase.open(context,mode=="demo")
         try {
             val repo=WalletRepository(db)
             repo.prepare(mode=="demo")
-            val processed=repo.postDue()
             val state=db.walletDao().read()
             val now=ZonedDateTime.now(financeZone)
             if(notify) remind(context,state,now,mode)
-            schedule(context,state,now,processed>=400)
+            schedule(context,state,now)
             prefs.edit().remove("automation_error_$mode").apply()
         } catch(e: Exception) {
             prefs.edit().putString("automation_error_$mode",e.message ?: "请打开账本核对固定计划").apply()
             scheduleRetry(context)
         } finally { db.close() }
     }
-    private fun remind(context: Context,s: Ledger,now: ZonedDateTime,mode: String) {
+    @Synchronized internal fun remind(context: Context,s: Ledger,now: ZonedDateTime,mode: String) {
         val r=s.reminder
         if(!r.enabled || !notificationsAllowed(context))return
-        val start=LocalTime.parse(r.startTime);val end=LocalTime.parse(r.endTime);val current=now.toLocalTime()
-        val within=if(start<=end)current>=start&&current<=end else current>=start||current<=end
-        if(!within)return
-        val day=if(end<start&&current<=end)now.toLocalDate().minusDays(1) else now.toLocalDate()
+        val day=ReminderPolicy.windowDay(LocalTime.parse(r.startTime),LocalTime.parse(r.endTime),now) ?: return
         val prefs=context.getSharedPreferences("wallet_settings",Context.MODE_PRIVATE)
         val key="reminded_${mode}_$day"
         if(prefs.getBoolean(key,false))return
-        val manuallyRecorded=s.activeEntries.any { it.date==now.toLocalDate().toString() && it.kind=="EXPENSE" && it.recurringOccurrenceId==null && s.expenseCategory(it).group.id in r.selectedGroupIds() }
-        if(!manuallyRecorded) {
+        run {
             val manager=context.getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(NotificationChannel(CHANNEL,"每日记账提醒",NotificationManager.IMPORTANCE_DEFAULT))
             val launch=PendingIntent.getActivity(context,702,Intent(context,MainActivity::class.java),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
             val notification=Notification.Builder(context,CHANNEL).setSmallIcon(R.drawable.ic_dengfeng_notification)
-                .setContentTitle("茶歇一下，记下今天的小开销")
-                .setContentText("${r.selectedCategories().joinToString("、")} · 慢慢养成记录习惯")
+                .setContentTitle("等风 · 记账提醒")
+                .setContentText("${r.selectedCategories().joinToString("、")} · 回看今天的收入与花费")
                 .setContentIntent(launch).setAutoCancel(true).build()
             manager.notify(702,notification)
         }
         prefs.edit().putBoolean(key,true).apply()
     }
-    private fun schedule(context: Context,s: Ledger,now: ZonedDateTime,more: Boolean) {
-        val candidates=s.recurringRules.filter { it.enabled }.map { it.nextAfter(now) }.toMutableList()
+    private fun schedule(context: Context,s: Ledger,now: ZonedDateTime) {
+        val candidates=mutableListOf<ZonedDateTime>()
         if(s.reminder.enabled) {
-            var next=now.toLocalDate().atTime(LocalTime.parse(s.reminder.startTime)).atZone(financeZone)
-            if(next<=now)next=next.plusDays(1)
-            candidates+=next
+            candidates+=ReminderPolicy.nextStart(LocalTime.parse(s.reminder.startTime),now)
         }
         val alarm=context.getSystemService(AlarmManager::class.java)
-        val next=if(more)now.plusMinutes(1) else candidates.minOrNull()
+        val next=candidates.minOrNull()
         if(next==null)alarm.cancel(alarmIntent(context))
         else alarm.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP,next.toInstant().toEpochMilli(),alarmIntent(context))
     }

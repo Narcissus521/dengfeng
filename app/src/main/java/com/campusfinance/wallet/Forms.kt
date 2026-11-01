@@ -50,7 +50,7 @@ import java.time.format.DateTimeFormatter
 }
 @Composable fun Field(label:String,value:String,onChange:(String)->Unit,money:Boolean=false,multi:Boolean=false,modifier:Modifier=Modifier) {
     OutlinedTextField(value=value,onValueChange={if(it.length<=5000)onChange(it)},label={Text(label,fontSize=12.sp)},modifier=modifier.fillMaxWidth(),
-        singleLine=!multi,minLines=if(multi) 3 else 1,keyboardOptions=KeyboardOptions(keyboardType=if(money) KeyboardType.Decimal else KeyboardType.Text),shape=RoundedCornerShape(12.dp))
+        singleLine=!multi,minLines=if(multi) 3 else 1,keyboardOptions=KeyboardOptions(keyboardType=if(money) KeyboardType.Decimal else KeyboardType.Text),shape=RoundedCornerShape(8.dp))
 }
 @Composable fun DateInput(label:String,value:String,onChange:(String)->Unit) {
     val context=LocalContext.current
@@ -69,7 +69,7 @@ import java.time.format.DateTimeFormatter
     Column(verticalArrangement=Arrangement.spacedBy(4.dp)) {
         Caption(label)
         Box {
-            OutlinedButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(12.dp),contentPadding=PaddingValues(15.dp)) {
+            OutlinedButton(onClick={expanded=true},modifier=Modifier.fillMaxWidth(),shape=RoundedCornerShape(8.dp),contentPadding=PaddingValues(15.dp)) {
                 Text(selected?.let(name) ?: "请选择",modifier=Modifier.weight(1f),color=Ink);Text("⌄",color=Muted)
             }
             DropdownMenu(expanded=expanded,onDismissRequest={expanded=false},modifier=Modifier.heightIn(max=260.dp)) {
@@ -89,17 +89,23 @@ import java.time.format.DateTimeFormatter
             "purchaseResult" -> PurchaseResult(s,close,open)
             "purchaseImpact" -> PurchaseResult(s,close,open,e.kind)
             "monthBook" -> MonthBookForm(s,e.kind ?: month,close,open)
+            "recordBook" -> MonthBookForm(s,e.kind ?: currentMonth(),close,open,title="记账记录")
             "categoryRecords" -> MonthBookForm(s,e.kind!!.substringAfter('|'),close,open,e.id,e.kind.substringBefore('|'))
             "analysisCategories" -> AnalysisCategoriesForm(s,e.id ?: month,e.kind ?: "month",close,open)
             "analysisBudget" -> AnalysisBudgetForm(s,e.id ?: month,e.kind ?: "month",close,open)
             "analysisHub" -> AdvancedAnalysisForm(s,e.id ?: month,e.kind ?: "month",close,open)
             "analysisAlert" -> AlertDetailForm(s,e.kind!!,close,open)
             "analysisRecords" -> AnalysisRecordsForm(s,ReportFilter.decode(e.kind!!),close,open)
+            "calendarRecords" -> AnalysisRecordsForm(s,ReportFilter.decode(e.kind!!),close,open,includeIncome=true)
             "categoryBudget" -> CategoryBudgetForm(s,e.kind ?: month,vm,busy,close,open)
             "expenseMetadata" -> ExpenseMetadataForm(s,s.entries.first{it.id==e.id},vm,busy,close)
+            "consumptionReview" -> ConsumptionReviewForm(s,e.kind ?: currentMonth(),close,open)
             "budgetOverview" -> BudgetOverviewForm(s,e.kind ?: month,close,open)
             "monthBudget" -> BudgetOverviewForm(s,e.id ?: month,close,open)
             "goalList" -> GoalListForm(s,close,open)
+            "removeDebt" -> DebtRemovalForm(s,e.id!!,true,vm,busy,close)
+            "restoreDebt" -> DebtRemovalForm(s,e.id!!,false,vm,busy,close)
+            "removedDebtList" -> DebtListForm(s,close,open,removed=true)
             "debtList" -> DebtListForm(s,close,open)
             "accounts" -> AccountsForm(s,busy,close,open)
             "account" -> if(e.id==null)AccountForm(null,vm,busy,close) else AccountDetailForm(s,e.id,vm,busy,close,open)
@@ -112,20 +118,20 @@ import java.time.format.DateTimeFormatter
             "transaction" -> EntryForm(s,s.entries.find{it.id==e.id},e.kind ?: "EXPENSE",null,vm,busy,close)
             "refund" -> EntryForm(s,null,"REFUND",s.entries.first{it.id==e.id},vm,busy,close)
             "detail" -> EntryDetail(s,s.entries.first{it.id==e.id},vm,busy,close,open)
+            "quickSaving" -> QuickSavingForm(s,e.id!!,vm,busy,close)
+            "quickRecurring" -> QuickRecurringForm(s,e.kind ?: "EXPENSE",vm,busy,close)
             "budget" -> BudgetForm(s,e.kind ?: month,vm,busy,close)
             "goal" -> GoalForm(s.goals.find{it.id==e.id},vm,busy,close)
             "debt" -> DebtForm(s,s.debts.find{it.id==e.id},vm,busy,close)
             "debtCategories" -> DebtCategoriesForm(s,vm,busy,close,open)
             "debtCategory" -> DebtCategoryForm(s.debtCategories.find{it.id==e.id},vm,busy,close)
-            "debtDetail" -> DebtDetail(s,s.debts.first{it.id==e.id},busy,close,open)
+            "debtDetail" -> DebtDetail(s,s.debts.first{it.id==e.id},vm,busy,close,open)
             "repay" -> RepayForm(s,s.installments.first{it.id==e.id},vm,busy,close)
             "simulate" -> SimulatorForm(s,close)
-            "profile" -> ProfileForm(s,vm,busy,close,onSwitch,{open(Editor("audits"))},{open(Editor("display"))},{open(Editor("about"))},{open(Editor("tutorial"))},
-                {open(Editor("accountSettingsList"))},{open(Editor("backup"))})
-            "backup" -> ImportExportForm(s,busy,close,export,restore)
-            "tutorial" -> BeginnerTutorial(close,replay=true)
+            "profile" -> ProfileForm(s,vm,busy,close,{open(Editor("display"))},{open(Editor("about"))},{open(Editor("accountSettingsList"))})
+            "pendingRecurring" -> PendingRecurringForm(s,busy,close,open,e.kind)
+            "confirmRecurring" -> ConfirmRecurringForm(s,e.id!!,e.kind!!,vm,busy,close)
             "about" -> AboutForm(close)
-            "audits" -> AuditForm(s.audits,close)
             "display" -> DisplayPreferencesForm(close,{open(Editor("layout"))})
             "layout" -> LayoutPreferencesForm(close)
             "drill" -> Form("${e.id ?: Kind.valueOf(e.kind ?: "EXPENSE").label}明细 · $month",close=close,confirm=null) {
@@ -141,6 +147,7 @@ import java.time.format.DateTimeFormatter
     Form("我的账户",busy,close,confirm="添加资金账户",submit={open(Editor("account"))}) {
         AmountLine("账户总资产",s.cash(),Forest)
         Caption("显示每个账户现在的余额。发现与实际余额不一致时，可手动校准；停用账户仍计入总资产。")
+        TeaLink("账户间转账","记录已完成的账户划转",icon="transfer"){open(Editor("transaction",kind="TRANSFER"))}
         s.accounts.forEach { a ->
             CardBox(Modifier.testTag("account-list-${a.id}"),color=Page,onClick={open(Editor("account",a.id))}) {
                 Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text(a.name,fontWeight=FontWeight.SemiBold);Pill(if(a.disabledOn==null) a.type else "已停用",if(a.disabledOn==null) Forest else Muted)}
@@ -193,7 +200,7 @@ import java.time.format.DateTimeFormatter
     }) {
         Field("账户名称",name,{name=it});Select("账户类型",listOf("微信","支付宝","银行卡","现金","其他现金账户"),type,{it}){type=it}
         Field("开始记账时的余额（元，可为负）",opening,{opening=it});DateInput("开始记账日 YYYY-MM-DD",start){start=it}
-        Field("核对或修改原因",reason,{reason=it})
+        Field("核对或修改原因（可选）",reason,{reason=it})
         Notice("开始余额指开始记账日北京时间 00:00 的余额，不计收入。当天已记的交易不要再次包含在开始余额里。已有流水后只能向前扩展开始记账日。",old!=null)
         if(old!=null)Caption("这里保存的是刚开始记账时的信息。修改开始余额会重算之后的余额；已有校准差额保持不变，请重新核对。只想改现在的余额，请返回账户详情选择手动校准。")
     }
@@ -211,18 +218,17 @@ import java.time.format.DateTimeFormatter
 @Composable private fun EntryForm(s:Ledger,old:Entry?,kindText:String,original:Entry?,vm:WalletViewModel,busy:Boolean,close:()->Unit) {
     val context=LocalContext.current
     val accountMemory=remember(context){ExpenseAccountMemory(context.getSharedPreferences("wallet_settings",android.content.Context.MODE_PRIVATE))}
-    var kind by rememberSaveable{mutableStateOf(old?.kind ?: kindText)}
+    val kind=old?.kind ?: kindText
     var amount by rememberSaveable{mutableStateOf(old?.amount?.let{Money.plain(it)} ?: "")}
-    var expenseAccountId by rememberSaveable{mutableStateOf(accountMemory.selected(s,today().toString()))}
-    var accountId by rememberSaveable{mutableStateOf(old?.accountId ?: if(kindText=="EXPENSE")expenseAccountId else s.accounts.firstOrNull{it.disabledOn==null}?.id ?: "")}
+    var accountId by rememberSaveable{mutableStateOf(old?.accountId ?: if(kind=="EXPENSE")accountMemory.selected(s,today().toString()) else s.accounts.firstOrNull{it.disabledOn==null}?.id ?: "")}
     var targetId by rememberSaveable{mutableStateOf(old?.toAccountId ?: s.accounts.firstOrNull{it.id!=accountId&&it.disabledOn==null}?.id ?: "")}
     var date by rememberSaveable{mutableStateOf(old?.date ?: today().toString())}
     var category by rememberSaveable{mutableStateOf(old?.category ?: if(kindText=="INCOME") incomeCategories.first() else expenseCategories.first())}
     val initialCategory=old?.let{s.expenseCategory(it)} ?: ExpenseTaxonomy.default
     var categoryGroup by rememberSaveable{mutableStateOf(initialCategory.group.id)}
     var subcategory by rememberSaveable{mutableStateOf(if(initialCategory.group.children.isEmpty())"" else initialCategory.leaf.id)}
-    var necessity by rememberSaveable{mutableStateOf(old?.necessity ?: Necessity.UNDECIDED.name)}
-    var bucket by rememberSaveable{mutableStateOf(old?.bucket ?: if(kindText=="EXPENSE") "NECESSARY" else "FREE")}
+    var necessity by rememberSaveable{mutableStateOf(old?.necessity ?: if(kind=="EXPENSE")Necessity.NECESSARY.name else Necessity.UNDECIDED.name)}
+    var bucket by rememberSaveable{mutableStateOf(old?.bucket ?: consumptionBucket(necessity))}
     var note by rememberSaveable{mutableStateOf(old?.note ?: "")};var fee by rememberSaveable{mutableStateOf("0.00")}
     var reason by rememberSaveable{mutableStateOf(if(old==null)"手动记录实际发生交易" else "")}
     val origin=original ?: old?.originalId?.let{id->s.entries.find{it.id==id}}
@@ -238,29 +244,29 @@ import java.time.format.DateTimeFormatter
             close()
         }
     }) {
-        if(old==null&&original==null&&kind!="REFUND") ChoiceRow(listOf("EXPENSE","INCOME","TRANSFER"),kind,{Kind.valueOf(it).label}){
-            kind=it;category=if(it=="INCOME")incomeCategories.first() else expenseCategories.first()
-            if(it=="EXPENSE")accountId=expenseAccountId
-        }
         if(s.accounts.isEmpty())Notice("请先在“我的资金账户”中添加账户。",true)
         Field(if(kind=="ADJUSTMENT") "余额修正金额（元，可为负）" else "金额（元）",amount,{amount=it},money=kind!="ADJUSTMENT")
-        Select(if(kind=="INCOME"||kind=="REFUND")"到账账户" else "付款 / 转出账户",s.accounts,s.accounts.find{it.id==accountId},{it.name+if(it.disabledOn!=null)"（已停用）" else ""}){accountId=it.id;if(kind=="EXPENSE")expenseAccountId=it.id}
+        Select(if(kind=="INCOME"||kind=="REFUND")"到账账户" else "付款 / 转出账户",s.accounts,s.accounts.find{it.id==accountId},{it.name+if(it.disabledOn!=null)"（已停用）" else ""}){accountId=it.id}
         if(kind=="TRANSFER")Select("转入账户",s.accounts.filter{it.id!=accountId},s.accounts.find{it.id==targetId},{it.name}){targetId=it.id}
         if(kind=="INCOME")Select("收入来源",incomeCategories,category,{it}){category=it}
         if(kind=="EXPENSE") {
             ExpenseCategoryPicker(categoryGroup,subcategory){categoryGroup=it.group.id;subcategory=it.leaf.id}
-            NecessityPicker(necessity){necessity=it}
+            ConsumptionTypePicker(necessity,bucket,{necessity=it;bucket=consumptionBucket(it)},allowUndecided=old!=null)
         }
-        if(kind=="EXPENSE"||(kind=="TRANSFER"&&old==null)){Caption("预算归属（沿用原月度额度）");BucketChoiceRow(bucket){bucket=it}}
-        if(kind=="TRANSFER"&&old==null){Field("另付手续费（元，无则为 0）",fee,{fee=it},money=true);Caption("手续费会单独记为消费，计入所选的日常必需或可选消费预算。")}
+        if(kind=="TRANSFER"&&old==null){Field("另付手续费（元，无则为 0）",fee,{fee=it},money=true)
+            ConsumptionTypePicker(consumptionNecessity(bucket),bucket,{bucket=consumptionBucket(it)},title="手续费消费性质")
+            Caption("转账金额不计消费；手续费单独记为消费，按所选性质计入预算。")}
         if(kind=="REFUND") {
             requireNotNull(origin)
             AmountLine("原始消费",origin.amount);AmountLine("其他有效退款",s.refunds(origin.id)-(old?.amount ?: 0L))
-            Caption("${origin.date} · ${origin.category} · ${Bucket.valueOf(origin.bucket).label}\n退款继承原消费预算类型，按实际到账月份抵减预算。")
+            Caption("${origin.date} · ${origin.category}\n退款继承原消费的消费性质，按实际到账月份抵减预算。")
             Caption("${s.expenseCategory(origin).label} · ${Necessity.valueOf(s.necessityOf(origin)).label}，随原消费调整。")
+            if(consumptionPending(origin.necessity,origin.bucket))ConsumptionLegacyNotice(origin.necessity,origin.bucket)
         }
-        DateInput("实际发生日期 YYYY-MM-DD",date){date=it};Field("备注（可选）",note,{note=it})
-        if(old!=null) { Field("修改原因",reason,{reason=it});Notice("历史修改会重算余额与关联月份。已有修正差额不会自动变化，请复核。",true) }
+        DateInput("实际发生日期 YYYY-MM-DD",date){date=it}
+        if(old==null)TeaSmall("默认填写北京时间当天，补记时可修改日期。")
+        Field("备注（可选）",note,{note=it})
+        if(old!=null) { Field("修改原因（可选）",reason,{reason=it});Notice("历史修改会重算余额与关联月份。已有修正差额不会自动变化，请复核。",true) }
         if(kind=="TRANSFER")Caption("转出和转入会一起记录；转账金额不计收支。编辑或撤销转账不会自动删除单独记录的手续费。")
     }
 }
@@ -271,9 +277,17 @@ import java.time.format.DateTimeFormatter
         Pill(if(e.voided)"已撤销" else Kind.valueOf(e.kind).label,if(e.voided) Muted else Forest)
         Text("¥ ${Money.format(e.amount)}",fontSize=32.sp,fontWeight=FontWeight.SemiBold)
         Text(entryTitle(e,s),fontSize=17.sp,fontWeight=FontWeight.Medium)
-        if(e.kind=="EXPENSE"||e.kind=="REFUND") {
-            Caption("${s.expenseCategory(e).label}\n${Necessity.valueOf(s.necessityOf(e)).label} · 预算归属：${Bucket.valueOf(s.bucketOf(e)).label}")
+        if(e.isConsumptionRecord()||e.kind=="REPAYMENT") {
+            Caption("${s.expenseCategory(e).label}\n消费性质：${Necessity.valueOf(s.necessityOf(e)).label}")
+            val source=s.consumptionSource(e)
+            if(consumptionPending(source.necessity,source.bucket))ConsumptionLegacyNotice(source.necessity,source.bucket)
             if(e.kind=="EXPENSE"&&e.categoryGroupId.isEmpty())Caption("原分类：${e.category}，可重新细分；不会根据金额或类别判断必要性。")
+        }
+        if(e.kind=="REPAYMENT") {
+            val installment=s.installments.first{it.id==e.installmentId}
+            val debt=s.debts.first{it.id==installment.debtId}
+            Caption("负债：${debt.name} · ${s.debtCategoryName(debt)}")
+            Notice(if(e.repaymentConsumption)"这一笔同时是负债还款和消费，已经计入发生月份的分类消费与预算；没有另扣一笔钱。" else "这笔还款保留消费用途标签，只减少现金和欠款，不重复计入消费。")
         }
         Caption("日期 ${e.date}\n账户 ${s.accountName(e.accountId)}${if(e.toAccountId!=null) " → ${s.accountName(e.toAccountId)}" else ""}")
         if(e.note.isNotBlank())Text(e.note,fontSize=13.sp,lineHeight=21.sp)
@@ -284,7 +298,6 @@ import java.time.format.DateTimeFormatter
             group.forEach{p->AmountLine("${s.accountName(p.accountId)}扣款",p.amount)}
             if(group.size>1)Caption("上方大金额是当前账户扣款；这 ${group.size} 笔属于同一次组合还款，撤销时会一起恢复。")
         }
-        Caption("记录编号\n${e.id}")
         if(e.kind=="EXPENSE") {
             AmountLine("累计有效退款",s.refunds(e.id));AmountLine("这笔消费实际花费",e.amount-s.refunds(e.id))
             s.activeEntries.filter{it.originalId==e.id}.forEach{r->TextButton(onClick={open(Editor("detail",r.id))}){Text("${r.date} · 退款 ¥${Money.format(r.amount)} ›")}}
@@ -294,15 +307,15 @@ import java.time.format.DateTimeFormatter
         val charges=s.entries.filter{it.transferId==e.id}
         charges.forEach{c->TextButton(onClick={open(Editor("detail",c.id))}){Text("查看独立手续费 ¥${Money.format(c.amount)} ›")}}
         if(!e.voided) {
-            if(e.kind=="EXPENSE")OutlinedButton(onClick={open(Editor("expenseMetadata",e.id))},modifier=Modifier.fillMaxWidth()){Text("修改分类与必要性")}
+            if(e.kind=="EXPENSE"||e.kind=="REPAYMENT")OutlinedButton(onClick={open(Editor("expenseMetadata",e.id))},modifier=Modifier.fillMaxWidth()){Text("修改分类与消费性质")}
             if(e.kind!="REPAYMENT"&&e.recurringOccurrenceId==null)OutlinedButton(onClick={open(Editor("transaction",e.id,e.kind))},modifier=Modifier.fillMaxWidth()){Text("修改记录")}
-            if(e.recurringOccurrenceId!=null)Notice("这笔记录来自固定收支。需要纠错时，请先撤销这次自动记账，再手动补记；组合扣款会一起撤销。")
+            if(e.recurringOccurrenceId!=null)Notice("这笔记录来自固定收支。需要纠错时，请先撤销这次固定记账，再手动补记；组合扣款会一起撤销。")
             if(e.kind=="EXPENSE"&&s.refunds(e.id)<e.amount)OutlinedButton(onClick={open(Editor("refund",e.id))},modifier=Modifier.fillMaxWidth()){Text("登记到账退款")}
             if(!voiding)TextButton(onClick={voiding=true}){Text(if(e.kind=="REPAYMENT")"撤销错误还款记录" else "撤销这笔记录",color=Red)}
             else {
                 Notice(when {
                     e.kind=="REPAYMENT" -> "这将撤销该期整笔还款，一起恢复所有付款账户的账本余额，并保留历史。"
-                    e.recurringOccurrenceId!=null -> "这将撤销该次固定收支的全部账户记录，并恢复账本余额；同一次自动记账不会再次生成。"
+                    e.recurringOccurrenceId!=null -> "这将撤销该次固定收支的全部账户记录，并恢复账本余额；同一期次不会再次生成。"
                     e.kind=="EXPENSE"&&s.refunds(e.id)>0 -> "已有有效退款，请先撤销错误退款记录，才能撤销原消费。"
                     else -> "撤销后会恢复相应余额并保留历史。转账的独立手续费保持有效。"
                 },true)
@@ -319,9 +332,9 @@ import java.time.format.DateTimeFormatter
     val b=s.budget(month)
     var total by rememberSaveable{mutableStateOf(b?.total?.let{Money.plain(it)} ?: "")};var necessary by rememberSaveable{mutableStateOf(b?.necessary?.let{Money.plain(it)} ?: "")};var free by rememberSaveable{mutableStateOf(b?.free?.let{Money.plain(it)} ?: "")}
     Form("$month 月度预算",busy,close,submit={val budget=Budget(month,Money.parse(total),Money.parse(necessary),Money.parse(free));vm.execute({budget(budget)},close)}) {
-        Field("总预算（元）",total,{total=it},true);Field("必要消费预算（元）",necessary,{necessary=it},true);Field("自由消费预算（元）",free,{free=it},true)
+        Field("总预算（元）",total,{total=it},true);Field("必要消费预算（元）",necessary,{necessary=it},true);Field("非必要消费预算（元）",free,{free=it},true)
         runCatching{Money.parse(total)-Money.parse(necessary)-Money.parse(free)}.getOrNull()?.let{AmountLine("未分配",it,if(it<0) Red else Forest)}
-        Notice("必要消费与自由消费之和不能超过总额。预算不增加现金，不自动结转；未分配额度不会自动填补类别超支。")
+        Notice("必要消费与非必要消费之和不能超过总额。预算不增加现金，不自动结转；未分配额度不会自动填补类别超支。")
     }
 }
 @Composable private fun GoalForm(old:Goal?,vm:WalletViewModel,busy:Boolean,close:()->Unit) {
@@ -402,7 +415,7 @@ import java.time.format.DateTimeFormatter
 }
 
 @Composable private fun SimulatorForm(s:Ledger,close:()->Unit) {
-    var name by rememberSaveable{mutableStateOf("")};var price by rememberSaveable{mutableStateOf("")};var bucket by rememberSaveable{mutableStateOf("FREE")};var account by rememberSaveable{mutableStateOf(s.accounts.firstOrNull{it.disabledOn==null}?.id ?: "")}
+    var name by rememberSaveable{mutableStateOf("")};var price by rememberSaveable{mutableStateOf("")};var bucket by rememberSaveable{mutableStateOf(Bucket.UNDECIDED.name)};var account by rememberSaveable{mutableStateOf(s.accounts.firstOrNull{it.disabledOn==null}?.id ?: "")}
     var result by remember{mutableStateOf<Long?>(null)}
     Form("买前想想",close=close,confirm="模拟今天现金购买",submit={val p=Money.parse(price);require(p>0){"价格须大于零"};require(account.isNotBlank()){ "请先添加付款账户" };result=p}) {
         Text("心动，也可以有计划。",fontSize=22.sp,fontWeight=FontWeight.SemiBold)
@@ -418,8 +431,7 @@ import java.time.format.DateTimeFormatter
                 AmountLine("付款账户：购买后",s.balance(account)-p,if(s.balance(account)<p)Red else Forest)
                 if(b!=null) {
                     AmountLine("本月总预算：购买后剩余",b.total-s.usage(currentMonth())-p)
-                    val planned=if(bucket=="FREE")b.free else b.necessary
-                    AmountLine("${Bucket.valueOf(bucket).label}：购买后剩余",planned-s.usage(currentMonth(),bucket)-p,if(planned-s.usage(currentMonth(),bucket)<p)Red else Forest)
+                    b.amountFor(bucket)?.let{planned->AmountLine("${Bucket.valueOf(bucket).label}：购买后剩余",planned-s.usage(currentMonth(),bucket)-p,if(planned-s.usage(currentMonth(),bucket)<p)Red else Forest)} ?: TeaSmall("消费性质未判断，仅模拟总预算变化。")
                 } else Notice("本月未设置预算，无法判断预算影响。",true)
             }
             if(s.balance(account)<p)Notice("付款账户余额不足。请先核对资金；其他账户的余额不代表此账户能直接支付。",true)
@@ -434,20 +446,15 @@ import java.time.format.DateTimeFormatter
     }
 }
 
-@Composable private fun ProfileForm(s:Ledger,vm:WalletViewModel,busy:Boolean,close:()->Unit,onSwitch:()->Unit,audits:()->Unit,display:()->Unit,about:()->Unit,tutorial:()->Unit,accounts:()->Unit,backup:()->Unit) {
+@Composable private fun ProfileForm(s:Ledger,vm:WalletViewModel,busy:Boolean,close:()->Unit,display:()->Unit,about:()->Unit,accounts:()->Unit) {
     var name by rememberSaveable{mutableStateOf(s.profile.name)}
     Form("设置",busy,close,confirm="保存账本名称",submit={vm.execute({profile(name)},close)}) {
-        Pill(if(s.profile.demo)"示例数据 · 独立账本" else "个人账本 · 本机离线")
-        Field("账本名称",name,{name=it});Caption("人民币 · 北京时间 · 每月 1 日至月底\n无需实名或联网；请定期手动导出备份。")
+        Pill("本机离线账本")
+        Field("账本名称",name,{name=it});Caption("人民币 · 北京时间 · 每月 1 日至月底")
         OutlinedButton(onClick=display,modifier=Modifier.fillMaxWidth()){Text("主题、显示与动效")}
-        OutlinedButton(onClick=tutorial,modifier=Modifier.fillMaxWidth()){Text("新手教程")}
         OutlinedButton(onClick=about,modifier=Modifier.fillMaxWidth()){Text("共同设计与免责声明")}
         OutlinedButton(onClick=accounts,modifier=Modifier.fillMaxWidth()){Text("账户设置")}
-        OutlinedButton(onClick=backup,modifier=Modifier.fillMaxWidth()){Text("导入与导出")}
-        OutlinedButton(onClick=audits,modifier=Modifier.fillMaxWidth()){Text("查看全部变更历史")}
-        OutlinedButton(onClick=onSwitch,modifier=Modifier.fillMaxWidth()){Text(if(s.profile.demo)"切换到我的个人账本" else "切换到独立示例账本")}
-        Notice("切换会保留两个账本的数据；示例数据不会进入个人账本。卸载会移除本机数据，请先备份。")
-        Caption("${stringResource(R.string.app_name)} 0.11.0 体验版 · 白茶柔雾\n固定收支支持自动记入账本、撤销和多账户组合扣款；负债按你填写的还款计划手动登记。储蓄不会冻结现金，App 不会操作真实支付账户。")
+        Caption("固定收支到期等待你确认，负债还款可按用途计入消费。App 不会操作真实支付账户。")
     }
 }
 @Composable private fun ImportExportForm(s:Ledger,busy:Boolean,close:()->Unit,export:()->Unit,restore:()->Unit) {
