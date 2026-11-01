@@ -21,7 +21,17 @@ class RecurringAndAnalysisTest {
     @Test fun nextDailyCanBeginInFuture(){val r=rule.copy(startDate="2026-11-01");assertEquals("2026-11-01",r.nextAfter(now).toLocalDate().toString())}
     @Test fun crossMonthRefundCannotProduceNegativeRingSlice(){val original=Entry(id="e",kind="EXPENSE",amount=10000,accountId="a",date="2026-09-01",category="购物");val s=ledger().copy(entries=listOf(original,Entry(kind="REFUND",amount=5000,accountId="a",date="2026-10-01",originalId="e"),Entry(kind="EXPENSE",amount=3000,accountId="a",date="2026-10-02",category="餐饮")));val p=s.spending(YearMonth.of(2026,10),1);assertTrue(p.chartUsesGross);assertEquals(-2000L,p.net);assertEquals(3000L,p.chartTotal);assertEquals(p.categories.values.exactSum(),p.buckets.values.exactSum())}
     @Test fun budgetRateOnlyUsesMonthsWithBudget(){val s=ledger().copy(entries=listOf(Entry(kind="EXPENSE",amount=20000,accountId="a",date="2026-09-02",category="购物")),budgets=listOf(Budget("2026-08",30000,10000,10000),Budget("2026-09",10000,5000,5000)));val p=s.spending(YearMonth.of(2026,10),3);assertEquals(2,p.budgetMonths.size);assertEquals(1,p.overMonths.size);assertEquals(50.0,p.overPercent!!,0.001)}
-    @Test fun quotedPlanDoesNotEvadeGoodsBudget(){val s=ledger().copy(budgets=listOf(Budget("2026-10",10000,5000,5000)));val r=s.review(PurchaseInput("耳机",10000,"a",amounts=listOf(3500,3500,3500),firstDate="2026-11-01"),now.toLocalDate());assertEquals(-5000L,r.bucketLeft);assertEquals(0L,r.payNow);assertEquals(500L,r.quoteExtra);assertTrue(r.installmentAdvice.contains("超预算"));assertEquals(200000L,s.cash())}
+    @Test fun quoteSeparatesFullCashPurchaseFromActualMonthlyInstallments(){
+        val s=ledger().copy(budgets=listOf(Budget("2026-10",10000,5000,5000)))
+        val r=s.review(PurchaseInput("耳机",10000,"a",bucket="FREE",amounts=listOf(3500,3500,3500),firstDate="2026-11-01"),now.toLocalDate())
+        assertEquals(-5000L,r.bucketLeft);assertTrue(r.onceAdvice.contains("超预算"))
+        assertEquals(0L,r.payNow);assertEquals(500L,r.quoteExtra)
+        assertEquals(0L,r.installmentMonthSpend);assertEquals(5000L,r.installmentBucketLeft)
+        assertFalse(r.installmentAdvice.contains("超预算"));assertEquals(200000L,s.cash())
+        val dueThisMonth=s.review(PurchaseInput("耳机",10000,"a",bucket="FREE",down=3000,amounts=listOf(7500),firstDate="2026-10-31"),now.toLocalDate())
+        assertEquals(10500L,dueThisMonth.installmentMonthSpend);assertEquals(-500L,dueThisMonth.installmentBudgetLeft)
+        assertTrue(dueThisMonth.installmentAdvice.contains("超出"));assertEquals(200000L,s.cash())
+    }
     @Test fun firstInstallmentDueTodayIsIncludedInCashNow(){val r=ledger().review(PurchaseInput("耳机",10000,"a",down=1000,amounts=listOf(3000,3000,3000),firstDate="2026-10-21"),now.toLocalDate());assertEquals(4000L,r.payNow);assertEquals(196000L,r.installmentCashAfter)}
     @Test fun teaSummariesStayWithinFiftyCharacters(){val s=demoLedger();listOf("month","half","year").forEach{assertTrue(s.teaSummary(it).length<=50)}}
 }

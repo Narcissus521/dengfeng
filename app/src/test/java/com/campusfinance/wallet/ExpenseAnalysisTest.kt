@@ -15,10 +15,34 @@ class ExpenseAnalysisTest {
     private fun reject(block:()->Unit)=assertThrows(IllegalArgumentException::class.java,block)
 
     @Test fun fourteenCategoriesKeepTwoLevelsExceptCharityAndOther() {
-        val g=ExpenseTaxonomy.groups;assertEquals(14,g.size);assertTrue(g.take(12).all{it.children.isNotEmpty()});assertTrue(g.takeLast(2).all{it.children.isEmpty()});assertEquals(61,g.sumOf{it.children.size})
-        assertEquals(63,ExpenseTaxonomy.legacyLeaves.size);assertTrue(g.any{it.id=="charity"&&it.name=="公益捐赠"})
+        val g=ExpenseTaxonomy.groups;assertEquals(14,g.size);assertTrue(g.take(12).all{it.children.isNotEmpty()});assertTrue(g.takeLast(2).all{it.children.isEmpty()});assertEquals(62,g.sumOf{it.children.size})
+        assertEquals(64,ExpenseTaxonomy.legacyLeaves.size);assertTrue(g.any{it.id=="charity"&&it.name=="公益捐赠"})
         assertFalse(g.any{it.name=="购物"});assertEquals("其他支出",g.last().name)
         g.forEach{p->assertEquals(p.id,ExpenseTaxonomy.explicit(p.id,"")!!.group.id)}
+    }
+    @Test fun aiFeesAreAnEducationLeafAndRefundsFollowTheSameId() {
+        val ai=e(id="ai",amount=16800,leaf="education.ai",n="NECESSARY")
+        val software=e(id="old-software",amount=3000,leaf="digital.software")
+        val s=ledger(ai,software,r("ai-refund",ai.id,800));Rules.validate(s,now)
+        val p=report(s)
+        assertEquals("AI 费用",s.expenseCategory(ai).leaf.name)
+        assertEquals(16000L,p.leaves.getValue("education.ai").net)
+        assertEquals(16000L,p.groups.getValue("education").net)
+        assertEquals(3000L,p.groups.getValue("digital").net)
+        assertEquals(19000L,p.total.net)
+        assertEquals("digital.software",s.expenseCategory(software).leaf.id)
+    }
+    @Test fun renamedFoodLeavesKeepExistingIdsRefundsAndMoneyIntact() {
+        val restaurant=e(id="restaurant",amount=2000,leaf="food.restaurant")
+        val snacks=e(id="water",amount=300,leaf="food.snacks")
+        val refund=r("refund",snacks.id,100)
+        val s=ledger(restaurant,snacks,refund);val p=report(s)
+        assertEquals("餐馆／小吃摊",s.expenseCategory(restaurant).leaf.name)
+        assertEquals("零食／饮品",s.expenseCategory(snacks).leaf.name)
+        assertEquals("food.snacks",s.expenseCategory(refund).leaf.id)
+        assertEquals("零食／饮品",s.expenseCategory(refund).leaf.name)
+        assertEquals(2200L,p.total.net);assertEquals(200L,p.leaves.getValue("food.snacks").net)
+        assertEquals(997800L,s.cash());assertEquals(listOf(restaurant,snacks,refund),s.entries)
     }
     @Test fun oldCharityAndItsRefundMoveToIndependentCategoryWithoutChangingMoney() {
         val old=e(leaf="other.charity");val s=ledger(old,r("r","e",3000))
