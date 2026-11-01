@@ -12,8 +12,8 @@ android {
         applicationId = "com.campusfinance.wallet"
         minSdk = 26
         targetSdk = 37
-        versionCode = 32
-        versionName = "0.11.1-preview"
+        versionCode = 43
+        versionName = "0.15.1-preview"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     compileOptions {
