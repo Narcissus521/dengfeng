@@ -36,17 +36,20 @@ class ExpenseAccountUiTest:TeaUiScenario() {
         }
     }
 
-    @Test fun changingFromIncomeToExpenseUsesTheExpenseDefaultAndKeepsItsCurrentDraftChoice() {
+    @Test fun dedicatedIncomeAndExpensePagesKeepTheLastSavedExpenseAccountWithoutTypeSwitches() {
         val key=ExpenseAccountMemory.key(true);val previous=prefs.getString(key,null)
         ready();val db=WalletDatabase.open(context,true)
         try {
             val accounts=runBlocking{db.walletDao().accounts()}.filter{it.disabledOn==null&&it.start<=today().toString()}
             val first=accounts[0];val selected=accounts[1]
             prefs.edit().putString(key,selected.id).commit()
-            navigate("记账");tapTag("leaf-INCOME");tap("支出")
+            navigate("记账");tapTag("leaf-INCOME");ui.onNodeWithTag("form-title").assertTextEquals("记录收入")
+            ui.onNodeWithText("支出").assertDoesNotExist();ui.onNodeWithText("转账").assertDoesNotExist();back()
+            expense()
             ui.onNodeWithText(selected.name).assertIsDisplayed()
-            tap(selected.name);tap(first.name);tap("收入");tap("支出")
-            ui.onNodeWithText(first.name).assertIsDisplayed();back()
+            tap(selected.name);tap(first.name);back()
+            navigate("记账");tapTag("leaf-INCOME");back();expense()
+            ui.onNodeWithText(selected.name).assertIsDisplayed();back()
             assertEquals(selected.id,prefs.getString(key,null))
         }finally{db.close();restore(key,previous)}
     }

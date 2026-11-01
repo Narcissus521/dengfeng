@@ -17,7 +17,7 @@ class PageSlideTest:TeaUiScenario() {
     }
     @Test fun brandAndBodySlideTogetherWhileTheDockStaysFixedInBothDirections() {
         prefs.edit().putString("theme_mode","LIGHT").putBoolean("motion_enabled",true).commit();ready()
-        val dockBounds=ui.onNodeWithTag("dock-drag").fetchSemanticsNode().boundsInRoot
+        val dockBounds=ui.onNodeWithTag("ledger-dock").fetchSemanticsNode().boundsInRoot
         val viewport=ui.onNodeWithTag("main-page-viewport").fetchSemanticsNode().boundsInRoot
         ui.mainClock.autoAdvance=false
         try {
@@ -25,7 +25,7 @@ class PageSlideTest:TeaUiScenario() {
             val brand=ui.onNodeWithTag("brand-1").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             val card=ui.onNodeWithTag("card-LEDGER_ASSETS").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("The brand must travel with the entering page",brand.left>viewport.left+10f)
-            assertEquals(dockBounds,ui.onNodeWithTag("dock-drag").fetchSemanticsNode().boundsInRoot)
+            assertEquals(dockBounds,ui.onNodeWithTag("ledger-dock").fetchSemanticsNode().boundsInRoot)
             frame("slide-forward-mid")
             ui.mainClock.advanceTimeBy(64);ui.waitForIdle()
             val nextBrand=ui.onNodeWithTag("brand-1").fetchSemanticsNode().boundsInRoot
@@ -38,7 +38,7 @@ class PageSlideTest:TeaUiScenario() {
             ui.onNodeWithTag("dock-首页").performClick();ui.mainClock.advanceTimeBy(160);ui.waitForIdle()
             val reverse=ui.onNodeWithTag("brand-0").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
             assertTrue("Returning pages must enter from the opposite side",reverse.right<viewport.right-10f)
-            assertEquals(dockBounds,ui.onNodeWithTag("dock-drag").fetchSemanticsNode().boundsInRoot)
+            assertEquals(dockBounds,ui.onNodeWithTag("ledger-dock").fetchSemanticsNode().boundsInRoot)
             frame("slide-back-mid");ui.mainClock.advanceTimeBy(500);ui.waitForIdle()
             ui.onNodeWithTag("dock-首页").assertIsSelected();ui.onAllNodesWithText("等风").assertCountEquals(1)
         }finally{ui.mainClock.autoAdvance=true}
@@ -46,7 +46,7 @@ class PageSlideTest:TeaUiScenario() {
     }
     @Test fun rapidReversalsKeepSelectionsAndFinishWithOnePageAndOneDock() {
         prefs.edit().putBoolean("motion_enabled",true).commit();ready()
-        ui.onNodeWithText("年度").performClick();navigate("账本");ui.onNodeWithText("各账户").performClick()
+        tapTag("summary-period");tapTag("summary-period");navigate("账本");ui.onNodeWithText("各账户").performClick()
         navigate("分析");ui.onNodeWithText("6 个月").performClick();ui.waitForIdle()
         ui.mainClock.autoAdvance=false
         try {
@@ -55,11 +55,11 @@ class PageSlideTest:TeaUiScenario() {
             }
             ui.mainClock.advanceTimeBy(700);ui.waitForIdle()
             ui.onNodeWithTag("dock-分析").assertIsSelected();ui.onNodeWithText("6 个月").assertIsSelected()
-            ui.onAllNodesWithTag("dock-drag").assertCountEquals(1);ui.onAllNodesWithText("等风").assertCountEquals(1)
+            ui.onAllNodesWithTag("ledger-dock").assertCountEquals(1);ui.onAllNodesWithText("等风").assertCountEquals(1)
             frame("slide-analysis-complete")
         }finally{ui.mainClock.autoAdvance=true}
         navigate("账本");ui.onNodeWithText("各账户").assertIsSelected()
-        navigate("首页");ui.onNodeWithText("年度").assertIsSelected()
+        navigate("首页");find(hasTestTag("summary-period"));ui.onNodeWithTag("summary-period").assertTextContains("年度")
     }
     @Test fun motionOffPlacesTheWholeTargetPageWithoutSliding() {
         prefs.edit().putBoolean("motion_enabled",false).commit();ready()
@@ -72,3 +72,4 @@ class PageSlideTest:TeaUiScenario() {
         }finally{ui.mainClock.autoAdvance=true;prefs.edit().putBoolean("motion_enabled",true).commit()}
     }
 }
+

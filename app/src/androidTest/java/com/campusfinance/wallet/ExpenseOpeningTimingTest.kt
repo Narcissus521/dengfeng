@@ -89,6 +89,10 @@ class ExpenseOpeningTimingTest {
                 SystemClock.sleep(100)
                 fun p(v:List<Double>,f:Double)=v[(ceil(v.size*f).toInt()-1).coerceIn(0,v.lastIndex)]
                 val cycles=JSONArray();val budget=1000.0/hz
+                val diagnostic=JSONArray()
+                repeat(8){i->val captured=samples.filter{it.cycle==i};diagnostic.put(JSONObject().put("cycle",i).put("callbackFrames",captured.size).put("afterTimestampFilter",captured.count{it.timestamp>=starts[i]}).put("startNs",starts[i]).put("firstTimestamp",captured.firstOrNull()?.timestamp ?: -1).put("durationsMs",JSONArray(captured.map{it.total/1_000_000.0})))}
+                report.parentFile!!.mkdirs()
+                File(report.parentFile,"expense-diagnostic-$version.json").writeText(JSONObject().put("device",Build.MODEL).put("displayHz",hz.toDouble()).put("lostRecords",lost.get()).put("cycles",diagnostic).toString(2))
                 repeat(8){i->
                     val frames=samples.filter{it.cycle==i&&it.timestamp>=starts[i]}.sortedBy{it.timestamp}
                     assertTrue("Expense opening should draw frames, cycle $i",frames.size>5)

@@ -38,7 +38,7 @@ class LayoutSettingsTest:TeaUiScenario() {
             ui.onNodeWithTag("resize-${c.name}-bottom").performTouchInput{swipe(center,center+Offset(0f,stepY*2),500)};ui.waitForIdle()
             assertEquals(2,stored(c)!!.columns);assertEquals(4,stored(c)!!.rows)
             assertEquals(dock,ui.onNodeWithTag("dock-drag").fetchSemanticsNode().boundsInRoot)
-            ui.onNodeWithText("必要剩余").assertIsDisplayed();ui.onNodeWithText("自由剩余").assertIsDisplayed();shot("grid-budget-two-by-four")
+            ui.onNodeWithText("必要剩余").assertIsDisplayed();ui.onNodeWithText("非必要剩余").assertIsDisplayed();shot("grid-budget-two-by-four")
             tapTag("card-resize-done");ready();assertEquals(2,stored(c)!!.columns);assertEquals(4,stored(c)!!.rows)
         }finally{cleanup()}
     }

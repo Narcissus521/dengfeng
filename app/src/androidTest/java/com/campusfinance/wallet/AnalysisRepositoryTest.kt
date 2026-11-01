@@ -20,6 +20,23 @@ class AnalysisRepositoryTest {
     }
     @After fun close(){db.close()}
     private fun expense()=Entry("e","EXPENSE",10000,"a",today().minusMonths(1).toString(),"餐饮食品",categoryGroupId="food",subcategoryId="food.canteen",necessity="UNDECIDED")
+    @Test fun aiFeesPersistAndRestoreWithTheirRefundAndBudgetWithoutReclassifyingOldSoftware()=runBlocking {
+        val ai=expense().copy(date=today().toString(),amount=16800,category="学习教育",categoryGroupId="education",subcategoryId="education.ai",necessity="NECESSARY",bucket="NECESSARY")
+        val software=ai.copy(id="software",amount=3000,category="数码电子",categoryGroupId="digital",subcategoryId="digital.software")
+        repo.entry(ai);repo.entry(software);repo.entry(Entry("r","REFUND",800,"a",today().toString(),originalId=ai.id))
+        repo.budget(Budget(currentMonth(),20000,18000,0));repo.categoryBudgets(currentMonth(),listOf(CategoryBudget(currentMonth(),"education",17000)))
+        val saved=db.walletDao().read();val copy=Backup.decode(Backup.encode(saved))
+        val fresh=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),WalletDatabase::class.java).build()
+        try {
+            val other=WalletRepository(fresh);other.prepare(false);other.restore(copy,false)
+            val restored=fresh.walletDao().read();val index=ExpenseIndex(restored);val range=ReportRange.month(currentMonth());val report=index.report(range)
+            assertEquals(saved.cash(),restored.cash());assertEquals(981000L,restored.cash())
+            assertEquals(16000L,report.leaves.getValue("education.ai").net);assertEquals(3000L,report.leaves.getValue("digital.software").net)
+            assertEquals(1000L,index.budgetComparison(range,"education").remaining)
+            assertEquals(19000L,index.budgetNatureComparison(range,"NECESSARY").actual)
+            assertEquals(saved.entries.toSet(),restored.entries.toSet());assertEquals(saved.categoryBudgets,restored.categoryBudgets)
+        } finally {fresh.close()}
+    }
     @Test fun oldDonationAndRefundPromoteToCharityWhileBackupAndOtherBudgetRemainIntact()=runBlocking {
         repo.entry(expense().copy(category="其他支出",categoryGroupId="other",subcategoryId="other.charity"))
         repo.entry(Entry("r","REFUND",3000,"a",today().toString(),originalId="e"))
@@ -49,9 +66,9 @@ class AnalysisRepositoryTest {
         assertEquals(listOf(CategoryBudget(currentMonth(),"health",0)),after.categoryBudgets);assertEquals(before.cash(),after.cash())
         repo.categoryBudgets(currentMonth(),emptyList());assertTrue(db.walletDao().read().categoryBudgets.isEmpty())
     }
-    @Test fun versionFiveBackupRoundTripPreservesTwoLevelsNecessityAndCaps()=runBlocking {
+    @Test fun versionSixBackupRoundTripPreservesTwoLevelsNecessityAndCaps()=runBlocking {
         repo.entry(expense().copy(necessity="NECESSARY"));repo.budget(Budget(currentMonth(),20000,0,0));repo.categoryBudgets(currentMonth(),listOf(CategoryBudget(currentMonth(),"food",15000)))
-        val s=db.walletDao().read();val json=Backup.encode(s);assertEquals(5,JSONObject(json).getInt("version"))
+        val s=db.walletDao().read();val json=Backup.encode(s);assertEquals(8,JSONObject(json).getInt("version"))
         val copy=Backup.decode(json);assertEquals(s.entries,copy.entries);assertEquals(s.categoryBudgets,copy.categoryBudgets);assertEquals(s.cash(),copy.cash())
         val fresh=Room.inMemoryDatabaseBuilder(ApplicationProvider.getApplicationContext<Context>(),WalletDatabase::class.java).build()
         try{WalletRepository(fresh).prepare(false);WalletRepository(fresh).restore(copy,false);assertEquals(s.categoryBudgets,fresh.walletDao().read().categoryBudgets)}finally{fresh.close()}
@@ -70,11 +87,13 @@ class AnalysisRepositoryTest {
         val s=db.walletDao().read();val p=ExpenseIndex(s).report(ReportRange.month(currentMonth()))
         assertEquals(200L,p.total.net);assertEquals(200L,p.groups.getValue("finance").net);assertEquals(1,p.total.count);assertEquals(999800L,s.cash())
     }
-    @Test fun automaticSplitCopiesMetadataAndFutureRuleEditPreservesPostedSnapshot()=runBlocking {
+    @Test fun confirmedSplitCopiesMetadataAndFutureRuleEditPreservesPostedSnapshot()=runBlocking {
         repo.account(Account("b","微信","微信",0,"2025-01-01"),"测试账户")
         val rule=RecurringRule(id="r",name="固定餐饮",kind="EXPENSE",amount=1000,frequency="DAILY",time="00:00",startDate=today().toString(),category="餐饮食品",categoryGroupId="food",subcategoryId="food.takeaway",necessity="NONESSENTIAL")
         val splits=listOf(RecurringAllocation("r","a",700),RecurringAllocation("r","b",300))
-        repo.recurring(rule,splits);assertEquals(1,repo.postDue())
+        repo.recurring(rule,splits);assertEquals(0,repo.postDue())
+        assertTrue(db.walletDao().read().entries.isEmpty())
+        repo.confirmRecurring(rule.id,today().toString(),today().toString(),rule.amount,splits.map{it.accountId to it.amount})
         val posted=db.walletDao().read();assertEquals(2,posted.entries.size);assertTrue(posted.entries.all{it.subcategoryId=="food.takeaway"&&it.necessity=="NONESSENTIAL"})
         assertEquals(1,ExpenseIndex(posted).report(ReportRange.month(currentMonth())).total.count)
         repo.recurring(rule.copy(category="医疗健康",categoryGroupId="health",subcategoryId="health.medicine",necessity="NECESSARY"),splits)

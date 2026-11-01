@@ -25,27 +25,39 @@ class RecurringRepositoryTest {
         repo.recurring(RecurringRule(id=id,name="每天早餐",kind=kind,amount=1500,frequency="DAILY",time="00:00",category=if(kind=="EXPENSE")"餐饮" else "兼职工资"),
             if(kind=="EXPENSE")listOf(RecurringAllocation(id,"a",1000),RecurringAllocation(id,"b",500)) else listOf(RecurringAllocation(id,"b",1500)))
     }
+    private suspend fun confirmDue():Int {
+        val state=db.walletDao().read();val pending=pendingRecurring(state,clock())
+        pending.forEach{(r,date)->repo.confirmRecurring(r.id,date.toString(),date.toString(),r.amount,state.recurringAllocations.filter{it.ruleId==r.id}.map{it.accountId to it.amount},clock())}
+        return pending.size
+    }
     @Test fun concurrentPostingAndGroupedUndoNeverDuplicate()=runBlocking {
-        plan();coroutineScope { val x=async{repo.postDue(clock())};val y=async{repo.postDue(clock())};assertEquals(1,x.await()+y.await()) }
+        plan();coroutineScope {
+            val x=async{runCatching{confirmDue()}};val y=async{runCatching{confirmDue()}};val results=listOf(x.await(),y.await())
+            assertEquals(1,results.sumOf{it.getOrDefault(0)})
+            results.mapNotNull{it.exceptionOrNull()}.forEach{assertTrue(it is IllegalArgumentException&&it.message.orEmpty().contains("已处理"))}
+        }
         val posted=db.walletDao().read();assertEquals(198500L,posted.cash());assertEquals(2,posted.entries.size)
         repo.voidEntry(posted.entries.first().id,"撤销错误自动记账")
         val undone=db.walletDao().read();assertEquals(200000L,undone.cash());assertTrue(undone.entries.all{it.voided});assertEquals("UNDONE",undone.recurringOccurrences.single().status)
         assertEquals(0,repo.postDue(clock()));assertEquals(2,db.walletDao().read().entries.size)
     }
     @Test fun unavailableAccountSkipsEntireSplitAndDoesNotRetry()=runBlocking {
-        plan();repo.toggleAccount("b");assertEquals(1,repo.postDue(clock()))
+        plan();repo.toggleAccount("b");assertEquals(0,repo.postDue(clock()))
+        val untouched=db.walletDao().read();assertTrue(untouched.recurringOccurrences.isEmpty())
+        assertTrue(runCatching{confirmDue()}.isFailure);assertEquals(untouched,db.walletDao().read())
+        repo.skipRecurring("r",today().toString(),clock())
         val s=db.walletDao().read();assertEquals(200000L,s.cash());assertTrue(s.entries.isEmpty());assertEquals("SKIPPED",s.recurringOccurrences.single().status)
         repo.toggleAccount("b");assertEquals(0,repo.postDue(clock()))
     }
     @Test fun changingFutureSplitsKeepsHistoricalSnapshots()=runBlocking {
-        plan();repo.postDue(clock());val old=db.walletDao().read()
+        plan();confirmDue();val old=db.walletDao().read()
         repo.recurring(old.recurringRules.single().copy(amount=2200),listOf(RecurringAllocation("r","b",2200)))
         val next=db.walletDao().read();assertEquals(old.entries,next.entries);assertEquals(old.cash(),next.cash())
         assertEquals(listOf(RecurringAllocation("r","b",2200)),next.recurringAllocations)
         assertEquals(1500L,next.recurringOccurrences.single().amount)
     }
     @Test fun refundBlocksGroupUndoUntilRefundIsVoided()=runBlocking {
-        plan();repo.postDue(clock());val e=db.walletDao().read().entries.first()
+        plan();confirmDue();val e=db.walletDao().read().entries.first()
         val refund=Entry(kind="REFUND",amount=100,accountId="a",date=today().toString(),originalId=e.id)
         repo.entry(refund);val before=db.walletDao().read()
         try{repo.undoRecurring(before.recurringOccurrences.single().id);fail("refunded group undone")}catch(_:IllegalArgumentException){}
@@ -54,7 +66,7 @@ class RecurringRepositoryTest {
         assertEquals(200000L,db.walletDao().read().cash())
     }
     @Test fun backupFourRoundTripRetainsPlansUndoAndReminder()=runBlocking {
-        plan();plan("income","INCOME");repo.postDue(clock());repo.undoRecurring("r@${today()}")
+        plan();plan("income","INCOME");confirmDue();repo.undoRecurring("r@${today()}")
         repo.reminder(ReminderSettings(enabled=true,startTime="22:00",endTime="01:00",categories="餐饮,通讯"))
         val s=db.walletDao().read();val restored=Backup.decode(Backup.encode(s))
         assertEquals(s.cash(),restored.cash());assertEquals(s.entries.toSet(),restored.entries.toSet())
@@ -96,6 +108,6 @@ class RecurringRepositoryTest {
         repo.recurring(r,allocations);assertEquals(0,repo.postDue(clock()))
         repo.recurring(r.copy(enabled=true),allocations)
         assertEquals(today().toString(),db.walletDao().read().recurringRules.single().startDate)
-        assertEquals(1,repo.postDue(clock()));assertEquals(today().toString(),db.walletDao().read().recurringOccurrences.single().date)
+        assertEquals(listOf(today()),pendingRecurring(db.walletDao().read(),clock()).map{it.second});assertEquals(1,confirmDue());assertEquals(today().toString(),db.walletDao().read().recurringOccurrences.single().date)
     }
 }

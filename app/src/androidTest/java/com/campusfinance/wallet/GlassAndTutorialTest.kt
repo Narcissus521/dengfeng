@@ -2,10 +2,12 @@ package com.campusfinance.wallet
 
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.test.*
 import androidx.test.filters.SdkSuppress
 import org.junit.Assert.*
 import org.junit.Test
+import kotlin.math.abs
 
 @SdkSuppress(minSdkVersion=28)
 class GlassAndTutorialTest:TeaUiScenario() {
@@ -63,14 +65,25 @@ class GlassAndTutorialTest:TeaUiScenario() {
         prefs.edit().putString("theme_mode","LIGHT").putBoolean("motion_enabled",true).commit()
         ready();val before=ui.onNodeWithText("买前想想").captureToImage().asAndroidBitmap()
         tapTag("card-HOME_PURCHASE")
-        ui.onAllNodesWithTag("dock-首页").assertCountEquals(1)
+        ui.onNodeWithTag("dock-首页").assertDoesNotExist()
         ui.mainClock.autoAdvance=false
         try {
             ui.onNodeWithText("‹ 返回").performClick();ui.mainClock.advanceTimeBy(192);ui.waitForIdle()
             ui.runOnIdle {assertEquals(CardPhase.CLOSING,ui.activity.activeCardMotion!!.phase);assertEquals(OverviewCard.HOME_PURCHASE,ui.activity.activeCardMotion!!.origin!!.key)}
             shot("glass-return-mid")
-            ui.mainClock.advanceTimeBy(208);ui.waitForIdle()
+            ui.mainClock.advanceTimeBy(138);ui.waitForIdle()
+            ui.runOnIdle {assertEquals(CardPhase.CLOSING,ui.activity.activeCardMotion!!.phase)}
+            val nearEnd=ui.onRoot().captureToImage().toPixelMap()
+            ui.mainClock.advanceTimeBy(70);ui.waitForIdle()
             ui.onNodeWithTag("card-editor-layer").assertDoesNotExist();ui.onNodeWithTag("card-HOME_PURCHASE").assertIsDisplayed()
+            val complete=ui.onRoot().captureToImage().toPixelMap()
+            val title=ui.onNodeWithText("买前想想").fetchSemanticsNode().boundsInRoot
+            var difference=0f;var samples=0
+            for(y in title.top.toInt() until title.bottom.toInt() step 2)for(x in title.left.toInt() until title.right.toInt() step 2){
+                val a=nearEnd[x,y];val b=complete[x,y]
+                difference+=maxOf(abs(a.red-b.red),abs(a.green-b.green),abs(a.blue-b.blue));samples++
+            }
+            assertTrue("The original title must return before the shrinking layer disappears",difference/samples<.035f)
             val after=ui.onNodeWithText("买前想想").captureToImage().asAndroidBitmap()
             assertTrue("Card title must already be fully drawn when the shrink finishes",before.sameAs(after))
             before.recycle();after.recycle();shot("glass-return-complete")
@@ -79,7 +92,7 @@ class GlassAndTutorialTest:TeaUiScenario() {
         ui.onNodeWithTag("card-HOME_PURCHASE").assertIsDisplayed();ui.onAllNodesWithTag("dock-首页").assertCountEquals(1)
         shot("glass-home")
     }
-    @Test fun settingsChildrenReturnWithoutHorizontalJumps() {
+    @Test fun settingsChildrenReturnWithOneContinuousPushAndSettleAligned() {
         prefs.edit().putBoolean("motion_enabled",true).commit();ready()
         navigate("记账");tapTag("leaf-SETTINGS")
         val titleLeft=ui.onNodeWithTag("form-title").fetchSemanticsNode().boundsInRoot.left
@@ -87,12 +100,16 @@ class GlassAndTutorialTest:TeaUiScenario() {
             tap(child);ui.mainClock.autoAdvance=false
             try {
                 if(child=="新手教程")ui.onNodeWithTag("tutorial-skip").performClick() else ui.onNodeWithText("‹ 返回").performClick()
+                var previous=Float.NEGATIVE_INFINITY
                 repeat(16) {
                     ui.mainClock.advanceTimeBy(16);ui.waitForIdle()
                     val title=ui.onNodeWithTag("form-title").assertTextEquals("设置").fetchSemanticsNode()
-                    assertEquals("The parent settings page must stay horizontally anchored throughout return",titleLeft,title.boundsInRoot.left,1f)
+                    assertTrue("The returning page must not reverse or shake",title.boundsInRoot.left+1f>=previous)
+                    previous=title.boundsInRoot.left
                 }
-                ui.onAllNodesWithTag("dock-drag").assertCountEquals(1)
+                ui.mainClock.advanceTimeBy(150);ui.waitForIdle()
+                assertEquals(titleLeft,ui.onNodeWithTag("form-title").fetchSemanticsNode().boundsInRoot.left,1f)
+                ui.onNodeWithTag("dock-drag").assertDoesNotExist()
             }finally{ui.mainClock.autoAdvance=true}
         }
     }

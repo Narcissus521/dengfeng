@@ -13,6 +13,52 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
+    @Test fun versionSixAddsOnlyDefaultMetadataAndKeepsAllHistoricalAmounts()=runBlocking {
+        val context=ApplicationProvider.getApplicationContext<Context>();val name="test-v6-confirm-${newId()}.db"
+        val schema=JSONObject(InstrumentationRegistry.getInstrumentation().context.assets.open("com.campusfinance.wallet.WalletDatabase/6.json").bufferedReader().use{it.readText()}).getJSONObject("database")
+        val old=context.openOrCreateDatabase(name,Context.MODE_PRIVATE,null)
+        try {
+            val tables=schema.getJSONArray("entities");for(i in 0 until tables.length()){val t=tables.getJSONObject(i);old.execSQL(t.getString("createSql").replace("\${TABLE_NAME}",t.getString("tableName")))}
+            val setup=schema.getJSONArray("setupQueries");for(i in 0 until setup.length())old.execSQL(setup.getString(i))
+            old.execSQL("INSERT INTO profiles VALUES(1,'保留原账本',123,0)")
+            old.execSQL("INSERT INTO accounts VALUES('a','现金','现金',100000,'2026-01-01',NULL)")
+            old.execSQL("INSERT INTO debts(id,name,principal,purchaseDate,note,categoryId,scheduleType,archived) VALUES('d','旧分期',10000,'2026-01-01','原样保留',NULL,'LEGACY',0)")
+            old.execSQL("INSERT INTO installments(id,debtId,number,date,principal,fee,scheduledAmount) VALUES('i','d',1,'2026-01-01',10000,0,NULL)")
+            old.execSQL("INSERT INTO entries(id,kind,amount,accountId,date,category,bucket,note,voided,installmentId) VALUES('p','REPAYMENT',10000,'a','2026-01-01','负债还款','UNDECIDED','原流水',0,'i')")
+            old.version=6
+        } finally {old.close()}
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_6_7).build()
+        try {
+            val s=upgraded.walletDao().read();Rules.validate(s)
+            assertEquals(90000L,s.cash());assertEquals(0L,s.usage("2026-01"));assertEquals("原流水",s.entries.single().note)
+            assertFalse(s.entries.single().repaymentConsumption);assertFalse(s.debts.single().repaymentsAreConsumption)
+            assertEquals("",s.debts.single().categoryGroupId);assertEquals(1,s.installments.size);assertTrue(s.unpaid().isEmpty())
+        } finally {upgraded.close();context.deleteDatabase(name)}
+    }
+    @Test fun versionFivePreservesContractAndRepaymentBeforeAddingRecoverableRemoval()=runBlocking{
+        val context=ApplicationProvider.getApplicationContext<Context>();val name="test-v5-archive-${newId()}.db"
+        val schema=JSONObject(InstrumentationRegistry.getInstrumentation().context.assets.open("com.campusfinance.wallet.WalletDatabase/5.json").bufferedReader().use{it.readText()}).getJSONObject("database")
+        val old=context.openOrCreateDatabase(name,Context.MODE_PRIVATE,null)
+        try{
+            val tables=schema.getJSONArray("entities");for(i in 0 until tables.length()){val t=tables.getJSONObject(i);old.execSQL(t.getString("createSql").replace("\${TABLE_NAME}",t.getString("tableName")))}
+            val setup=schema.getJSONArray("setupQueries");for(i in 0 until setup.length())old.execSQL(setup.getString(i))
+            old.execSQL("INSERT INTO profiles VALUES(1,'迁移测试',123,0)")
+            old.execSQL("INSERT INTO accounts VALUES('a','现金','现金',100000,'2026-01-01',NULL)")
+            old.execSQL("INSERT INTO debts(id,name,principal,purchaseDate,note,categoryId,scheduleType) VALUES('d','旧贷款',10000,'2026-01-01','保留合同',NULL,'LEGACY')")
+            old.execSQL("INSERT INTO installments(id,debtId,number,date,principal,fee,scheduledAmount) VALUES('i1','d',1,'2026-01-01',5000,0,NULL),('i2','d',2,'2026-02-01',5000,0,NULL)")
+            old.execSQL("INSERT INTO entries(id,kind,amount,accountId,date,category,bucket,note,voided,installmentId) VALUES('p','REPAYMENT',5000,'a','2026-01-01','还款','FREE','真实还款',0,'i1')")
+            old.version=5
+        }finally{old.close()}
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
+        try{
+            val before=upgraded.walletDao().read();Rules.validate(before);assertFalse(before.debts.single().archived);assertEquals(95000L,before.cash());assertEquals(5000L,before.unpaid().map{it.due}.exactSum())
+            val repo=WalletRepository(upgraded);repo.archiveDebt("d",true);val after=upgraded.walletDao().read()
+            assertEquals(before.entries,after.entries);assertEquals(before.installments,after.installments);assertEquals(before.cash(),after.cash());assertTrue(after.unpaid().isEmpty())
+            assertTrue(Backup.decode(Backup.encode(after)).debts.single().archived)
+            repo.archiveDebt("d",false);assertEquals(before.unpaid(),upgraded.walletDao().read().unpaid())
+        }finally{upgraded.close();context.deleteDatabase(name)}
+    }
+
     @Test fun versionFourAddsIndependentMetadataWithoutRewritingHistoricalMoney()=runBlocking {
         val context=ApplicationProvider.getApplicationContext<Context>();val name="test-v4-upgrade-${newId()}.db"
         val schema=JSONObject(InstrumentationRegistry.getInstrumentation().context.assets.open("com.campusfinance.wallet.WalletDatabase/4.json").bufferedReader().use{it.readText()}).getJSONObject("database")
@@ -30,7 +76,7 @@ class MigrationTest {
             old.execSQL("INSERT INTO reminder_settings VALUES (1,1,'20:00','22:00','购物,美护,其他')")
             old.version=4
         }finally{old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_4_5).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
         try {
             val s=upgraded.walletDao().read();Rules.validate(s)
             assertEquals(92000L,s.cash());assertEquals(-2000L,s.usage("2026-10"));assertTrue(s.categoryBudgets.isEmpty())
@@ -62,7 +108,7 @@ class MigrationTest {
             old.execSQL("INSERT INTO entries (id,kind,amount,accountId,date,category,bucket,note,voided,incomePlanId,incomePlanMonth) VALUES ('inc','INCOME',50000,'a',?,'生活费','FREE','旧收入',0,'a',?)",arrayOf(today().toString(),currentMonth()))
             old.version=2
         }finally{old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
         try {
             val s=upgraded.walletDao().read();Rules.validate(s)
             assertEquals(289000L,s.cash());assertEquals(45678L,s.goals.single().saved);assertEquals(80000L,s.goals.single().intention)
@@ -92,7 +138,7 @@ class MigrationTest {
             old.execSQL("INSERT INTO entries VALUES ('e', 'EXPENSE', 50000, 'a', ?, '购物', 'FREE', NULL, NULL, NULL, '旧版消费', 0, NULL)",arrayOf(today().toString()))
             old.version=1
         }finally{old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_1_2,WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_1_2,WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
         try {
             val s=upgraded.walletDao().read();Rules.validate(s)
             assertEquals("旧版个人账本",s.profile.name);assertEquals(200000L,s.cash());assertEquals(80000L,s.goals.single().intention);assertEquals(0L,s.goals.single().saved);assertTrue(s.incomePlans.isEmpty());assertNull(s.entries.single().incomePlanId)

@@ -54,13 +54,13 @@ class AccountBalanceUiTest:TeaUiScenario() {
         try {
             openAccounts();tapTag("account-open-${a.id}");tap("账户设置")
             ui.onNodeWithTag("form-title").assertTextEquals("账户设置")
-            fill("开始记账日 YYYY-MM-DD",today().toString());fill("核对或修改原因","验证历史日期保护");submit()
+            fill("开始记账日 YYYY-MM-DD",today().toString());fill("核对或修改原因（可选）","验证历史日期保护");submit()
             ui.waitUntil(10000){ui.onAllNodesWithText("未能保存").fetchSemanticsNodes().isNotEmpty()}
             ui.onNodeWithText("已有流水后，开始记账日只能向前扩展").assertIsDisplayed()
             ui.onNodeWithTag("save-confirmation").assertDoesNotExist()
             assertEquals(a,runBlocking{db.walletDao().read().accounts.first{it.id==a.id}});tap("知道了")
             fill("开始记账日 YYYY-MM-DD",a.start);fill("开始记账时的余额（元，可为负）",Money.plain(a.opening+1000))
-            fill("核对或修改原因","核对账户初始设置");submit()
+            fill("核对或修改原因（可选）","核对账户初始设置");submit()
             ui.waitUntil(10000){runBlocking{db.walletDao().read().accounts.first{it.id==a.id}.opening==a.opening+1000}}
             ui.waitUntil(10000){ui.onAllNodesWithTag("save-confirmation").fetchSemanticsNodes().isNotEmpty()}
             ui.onNodeWithText("✓ 保存成功").assertIsDisplayed()

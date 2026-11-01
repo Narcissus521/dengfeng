@@ -39,16 +39,17 @@ class WhiteTeaUiTest {
         revealMatcher(hasText(text))
     }
     private fun revealMatcher(matcher:SemanticsMatcher) {
+        ui.waitUntil(15000){ui.onAllNodesWithTag("records-loading").fetchSemanticsNodes().isEmpty()}
         val target=ui.onAllNodes(matcher).onLast()
         if(runCatching{assertVisible(target)}.isSuccess)return
         for(i in 0 until 40) {
-            val previous=ui.onAllNodesWithTag("pagePrevious").onLast()
+            val previous=ui.onAllNodes(hasTestTag("pagePrevious") or hasTestTag("grid-previous")).onLast()
             if(runCatching{previous.assertIsEnabled()}.isFailure)break
             previous.performClick();ui.waitForIdle()
         }
         repeat(35) {
             if(runCatching{assertVisible(target)}.isSuccess)return
-            val next=ui.onAllNodesWithTag("pageNext").onLast()
+            val next=ui.onAllNodes(hasTestTag("pageNext") or hasTestTag("grid-next")).onLast()
             if(runCatching{next.assertIsEnabled()}.isSuccess){next.performClick();ui.waitForIdle()}
         }
         error("未能在分页中找到 $matcher")
@@ -69,7 +70,7 @@ class WhiteTeaUiTest {
             }
             ui.onNodeWithText("年度").performClick()
             ui.onNodeWithContentDescription("双层圆环图：外圈消费种类，内圈必要消费、非必要消费、未判断").assertIsDisplayed()
-            ui.onNodeWithText("3 个月").performClick();ui.onNodeWithText("消费必要性").assertIsDisplayed();shot("${theme.lowercase()}-3months")
+            ui.onNodeWithText("3 个月").performClick();ui.onNodeWithText("消费日历").assertIsDisplayed();shot("${theme.lowercase()}-3months")
             ui.onNodeWithTag("dock-记账").performClick();ui.onNodeWithTag("leaf-SETTINGS").performClick()
             reveal("共同设计与免责声明");ui.onNodeWithText("共同设计与免责声明").performClick()
             ui.waitUntil(10000){ui.onAllNodesWithText("梨花怎黛玉").fetchSemanticsNodes().isNotEmpty()}
@@ -78,6 +79,7 @@ class WhiteTeaUiTest {
             assertVisible(ui.onNodeWithContentDescription("梨花怎黛玉的头像"))
             assertVisible(ui.onNodeWithText("由梨花怎黛玉与 OpenAI Codex 共同设计"));shot("${theme.lowercase()}-about")
             reveal("使用免责声明");assertVisible(ui.onNodeWithText("使用免责声明"));shot("${theme.lowercase()}-disclaimer")
+            repeat(2){ui.onNodeWithText("‹ 返回").performClick();ui.waitForIdle()}
             ui.onAllNodesWithTag("dock-首页").onLast().performClick()
         }
     }
@@ -92,7 +94,8 @@ class WhiteTeaUiTest {
             ui.onNodeWithText("计划名称").performTextInput(name);ui.onNodeWithText("每次金额（元）").performTextInput("36.66")
             Espresso.closeSoftKeyboard();ui.onNodeWithTag("form-submit").performClick()
             reveal("记账时间 HH:mm");ui.onNodeWithText("记账时间 HH:mm").performTextReplacement("00:00")
-            Espresso.closeSoftKeyboard();ui.onNodeWithTag("form-submit").performClick()
+            Espresso.closeSoftKeyboard();reveal("非必要消费");ui.onNodeWithText("非必要消费").performClick();ui.onNodeWithText("非必要消费").assertIsSelected()
+            ui.onAllNodesWithText("消费归属").assertCountEquals(0);ui.onNodeWithTag("form-submit").performClick()
             reveal("添加付款账户");ui.onNodeWithText("添加付款账户").performClick()
             val accounts=runBlocking{db.walletDao().accounts().filter{it.disabledOn==null}.take(2)}
             accounts.forEachIndexed{i,a->val tag="recurring-split-${a.id}";revealMatcher(hasTestTag(tag));ui.onNodeWithTag(tag).performTextReplacement(if(i==0)"20.00" else "16.66");Espresso.closeSoftKeyboard()}
@@ -100,7 +103,9 @@ class WhiteTeaUiTest {
             ui.onNodeWithTag("form-submit").performClick()
             ui.waitUntil(15000){runBlocking{db.walletDao().read().recurringRules.any{it.name==name}}}
             rule=runBlocking{db.walletDao().read().recurringRules.single{it.name==name}}
+            assertEquals("NONESSENTIAL",rule!!.necessity);assertEquals("FREE",rule!!.bucket)
             ui.waitUntil(15000){runBlocking{db.walletDao().read().recurringOccurrences.any{it.ruleId==rule!!.id}}}
+            assertTrue(runBlocking{db.walletDao().read().entries.filter{it.recurringOccurrenceId?.startsWith(rule!!.id+"@")==true}.all{it.necessity=="NONESSENTIAL"&&it.bucket=="FREE"}})
             assertEquals(before-3666,runBlocking{db.walletDao().read().cash()})
             reveal(name);ui.onNodeWithText(name).performClick();reveal("撤销本次");ui.onNodeWithText("撤销本次").performClick()
             ui.waitUntil(10000){runBlocking{db.walletDao().read().cash()==before}}
@@ -126,7 +131,7 @@ class WhiteTeaUiTest {
             ui.waitUntil(10000){runBlocking{db.walletDao().read().entries.any{it.note==name}}}
             assertEquals(before-1234,runBlocking{db.walletDao().read().cash()})
             ui.onNodeWithTag("dock-账本").performClick();ui.onNodeWithText(name).assertDoesNotExist()
-            ui.onNodeWithText("本月账本").performClick()
+            reveal("本月账本");ui.onNodeWithText("本月账本").performClick()
             ui.onNodeWithText("搜索分类、账户或备注").performTextInput(name);Espresso.closeSoftKeyboard()
             reveal("其他支出");ui.onNodeWithText("其他支出").performClick()
             ui.onNodeWithTag("form-title").assertTextEquals("交易详情");reveal("撤销这笔记录");ui.onNodeWithText("撤销这笔记录").performClick()

@@ -23,6 +23,6 @@ class BrandingUiTest:TeaUiScenario() {
         val file=File(context.getExternalFilesDir(null),"screenshots/dengfeng-launcher.png")
         file.parentFile!!.mkdirs();file.outputStream().use{bitmap.compress(Bitmap.CompressFormat.PNG,100,it)};bitmap.recycle()
         navigate("记账");tapTag("leaf-SETTINGS");tap("共同设计与免责声明")
-        find(hasText("等风 0.11.0 体验版"));ui.onNodeWithText("梨花怎黛玉").assertIsDisplayed();shot("dengfeng-about")
+        find(hasText("等风 ${context.packageManager.getPackageInfo(context.packageName,0).versionName}"));ui.onNodeWithText("梨花怎黛玉").assertIsDisplayed();shot("dengfeng-about")
     }
 }
