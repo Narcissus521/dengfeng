@@ -1,4 +1,7 @@
-<?xml version="1.0" encoding="utf-8"?>
-<inset xmlns:android="http://schemas.android.com/apk/res/android" android:inset="14%">
-    <bitmap android:src="@drawable/dengfeng_foreground" android:gravity="fill" android:filter="true" />
-</inset>
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+<path android:fillColor="#863E4C" android:pathData="M28,24 L69,24 Q77,24 77,32 L77,80 L28,80 Q22,80 22,74 L22,30 Q22,24 28,24 Z"/>
+<path android:fillColor="#F9F4E6" android:pathData="M31,29 L67,29 Q71,29 71,33 L71,74 L31,74 Z"/>
+<path android:fillColor="#C7BEA8" android:pathData="M35,40 L63,40 L63,42 L35,42 Z M35,49 L61,49 L61,51 L35,51 Z M35,58 L55,58 L55,60 L35,60 Z"/>
+<path android:fillColor="#47494B" android:pathData="M53,72 L77,40 L84,46 L60,77 L52,80 Z"/>
+<path android:fillColor="#FFFDF6" android:pathData="M52,80 L53,72 L60,77 Z"/>
+</vector>
