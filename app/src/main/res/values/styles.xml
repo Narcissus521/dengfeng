@@ -1,25 +1,27 @@
 <resources>
     <style name="Theme.Wallet.Base" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#47494B</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:colorAccent">#5F7086</item>
-        <item name="android:windowBackground">#F7F9F5</item>
+        <item name="android:colorAccent">#863E4C</item>
+        <item name="android:windowBackground">#F2F1EB</item>
     </style>
     <style name="Theme.Wallet" parent="Theme.Wallet.Base" />
     <style name="Theme.Wallet.Dark.Base" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
         <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#303334</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:colorAccent">#BDCDE2</item>
-        <item name="android:windowBackground">#1B1E20</item>
+        <item name="android:colorAccent">#D8A4B0</item>
+        <item name="android:windowBackground">#242523</item>
     </style>
     <style name="Theme.Wallet.Dark" parent="Theme.Wallet.Dark.Base" />
     <style name="Theme.Wallet.DatePicker.Light" parent="android:style/Theme.Material.Light.Dialog.Alert">
-        <item name="android:colorAccent">#5F7086</item>
+        <item name="android:colorAccent">#863E4C</item>
     </style>
     <style name="Theme.Wallet.DatePicker.Dark" parent="android:style/Theme.Material.Dialog.Alert">
-        <item name="android:colorAccent">#BDCDE2</item>
+        <item name="android:colorAccent">#D8A4B0</item>
     </style>
 </resources>
 
