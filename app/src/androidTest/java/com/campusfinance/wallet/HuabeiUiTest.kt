@@ -14,7 +14,10 @@ class HuabeiUiTest : TeaUiScenario() {
         val db = WalletDatabase.open(context, true)
         val note = "huabei-ui-${newId()}"
         val month = YearMonth.from(today()).plusMonths(1).toString()
+        val key = ExpenseAccountMemory.key(true)
+        val previous = prefs.getString(key, null)
         try {
+            prefs.edit().remove(key).commit()
             val before = runBlocking { db.walletDao().read() }
             assertTrue(before.huabeiBills().none { it.month == month })
             val defaultAccount = ExpenseAccountMemory(prefs).selected(before, today().toString())
@@ -32,6 +35,9 @@ class HuabeiUiTest : TeaUiScenario() {
             assertEquals(before.cash(), posted.cash())
             assertEquals(before.usage(currentMonth()) + 1234, posted.usage(currentMonth()))
             assertEquals(HUABEI_ACCOUNT, bill.purchases.single { it.note == note }.accountId)
+            navigate("记账")
+            tapTag("leaf-EXPENSE")
+            find(hasText("花呗（次月还款）"))
 
             navigate("规划")
             tapTag("card-PLAN_DEBT")
@@ -42,6 +48,7 @@ class HuabeiUiTest : TeaUiScenario() {
             find(hasText("已结清"))
             assertEquals(posted.usage(currentMonth()), runBlocking { db.walletDao().read().usage(currentMonth()) })
         } finally {
+            runCatching { navigate("首页") }
             runBlocking {
                 val s = db.walletDao().read()
                 val entry = s.activeEntries.firstOrNull { it.note == note }
@@ -53,6 +60,7 @@ class HuabeiUiTest : TeaUiScenario() {
                     repo.voidEntry(entry.id, "撤销测试消费")
                 }
             }
+            prefs.edit().putString(key, previous).commit()
             db.close()
         }
     }

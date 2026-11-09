@@ -10,6 +10,9 @@ class ExpenseAccountPolicyTest {
     @Test fun preferredAccountWinsOverTheFirstAccount(){
         assertEquals("last",ExpenseAccountPolicy.choose(listOf(first,last),"last",date))
     }
+    @Test fun rememberedHuabeiIsSelectableWithoutACashAccount(){
+        assertEquals(HUABEI_ACCOUNT,ExpenseAccountPolicy.choose(emptyList(),HUABEI_ACCOUNT,date))
+    }
     @Test fun missingPreferenceAndRemovedAccountFallBackToAnAvailableAccount(){
         assertEquals("first",ExpenseAccountPolicy.choose(listOf(first,last),null,date))
         assertEquals("first",ExpenseAccountPolicy.choose(listOf(first,last),"removed",date))
