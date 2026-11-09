@@ -30,7 +30,7 @@ internal val LocalQuickEditor=staticCompositionLocalOf<((Editor)->Unit)?>{null}
     val budget=s.budget(month);val used=s.usage(month)
     val quick=LocalQuickEditor.current
     val quickState=LocalLedgerQuickState.current
-    val goals=s.goals.filterNot{it.archived};val pending=s.unpaid().filter{it.date.startsWith(month)}
+    val goals=s.goals.filterNot{it.archived};val pending=s.pendingRepayments().filter{it.date.startsWith(month)}
     val latest=remember(s.profile.revision,month){s.activeEntries.asReversed().filter{it.date.startsWith(month)}.sortedByDescending{it.date}.take(2)}
     val purchase by rememberPurchase(s.profile.demo)
     var summary by rememberSaveable{mutableIntStateOf(0)}

@@ -107,6 +107,10 @@ import java.time.format.DateTimeFormatter
             "restoreDebt" -> DebtRemovalForm(s,e.id!!,false,vm,busy,close)
             "removedDebtList" -> DebtListForm(s,close,open,removed=true)
             "debtList" -> DebtListForm(s,close,open)
+            "huabeiBill" -> HuabeiBillForm(s,e.id!!,close,open)
+            "huabeiRepay" -> HuabeiRepayForm(s,e.id!!,vm,busy,close)
+            "huabeiDueDate" -> HuabeiDueDateForm(s,e.id!!,vm,busy,close)
+            "huabeiSettings" -> HuabeiSettingsForm(close)
             "accounts" -> AccountsForm(s,busy,close,open)
             "account" -> if(e.id==null)AccountForm(null,vm,busy,close) else AccountDetailForm(s,e.id,vm,busy,close,open)
             "accountSettingsList" -> AccountSettingsList(s,close,open)
@@ -128,7 +132,7 @@ import java.time.format.DateTimeFormatter
             "debtDetail" -> DebtDetail(s,s.debts.first{it.id==e.id},vm,busy,close,open)
             "repay" -> RepayForm(s,s.installments.first{it.id==e.id},vm,busy,close)
             "simulate" -> SimulatorForm(s,close)
-            "profile" -> ProfileForm(s,vm,busy,close,{open(Editor("display"))},{open(Editor("about"))},{open(Editor("accountSettingsList"))})
+            "profile" -> ProfileForm(s,vm,busy,close,{open(Editor("display"))},{open(Editor("about"))},{open(Editor("accountSettingsList"))},{open(Editor("huabeiSettings"))})
             "pendingRecurring" -> PendingRecurringForm(s,busy,close,open,e.kind)
             "confirmRecurring" -> ConfirmRecurringForm(s,e.id!!,e.kind!!,vm,busy,close)
             "about" -> AboutForm(close)
@@ -217,10 +221,21 @@ import java.time.format.DateTimeFormatter
 
 @Composable private fun EntryForm(s:Ledger,old:Entry?,kindText:String,original:Entry?,vm:WalletViewModel,busy:Boolean,close:()->Unit) {
     val context=LocalContext.current
-    val accountMemory=remember(context){ExpenseAccountMemory(context.getSharedPreferences("wallet_settings",android.content.Context.MODE_PRIVATE))}
+    val prefs=remember(context){context.getSharedPreferences("wallet_settings",android.content.Context.MODE_PRIVATE)}
+    val accountMemory=remember(prefs){ExpenseAccountMemory(prefs)}
+    val huabeiDay=prefs.getInt(HUABEI_DAY_SETTING,DEFAULT_HUABEI_DAY)
     val kind=old?.kind ?: kindText
+    val origin=original ?: old?.originalId?.let{id->s.entries.find{it.id==id}}
+    val creditRefund=kind=="REFUND" && origin?.accountId==HUABEI_ACCOUNT &&
+        s.huabeiBills().any { it.dueDate==origin.huabeiDueDate && it.payments.isEmpty() }
+    val offerHuabei=kind=="EXPENSE" && old?.recurringOccurrenceId==null && old?.transferId==null ||
+        creditRefund || old?.accountId==HUABEI_ACCOUNT
     var amount by rememberSaveable{mutableStateOf(old?.amount?.let{Money.plain(it)} ?: "")}
-    var accountId by rememberSaveable{mutableStateOf(old?.accountId ?: if(kind=="EXPENSE")accountMemory.selected(s,today().toString()) else s.accounts.firstOrNull{it.disabledOn==null}?.id ?: "")}
+    var accountId by rememberSaveable{mutableStateOf(old?.accountId ?: when {
+        kind=="EXPENSE" -> accountMemory.selected(s,today().toString())
+        creditRefund -> HUABEI_ACCOUNT
+        else -> s.accounts.firstOrNull{it.disabledOn==null}?.id ?: ""
+    })}
     var targetId by rememberSaveable{mutableStateOf(old?.toAccountId ?: s.accounts.firstOrNull{it.id!=accountId&&it.disabledOn==null}?.id ?: "")}
     var date by rememberSaveable{mutableStateOf(old?.date ?: today().toString())}
     var category by rememberSaveable{mutableStateOf(old?.category ?: if(kindText=="INCOME") incomeCategories.first() else expenseCategories.first())}
@@ -231,22 +246,28 @@ import java.time.format.DateTimeFormatter
     var bucket by rememberSaveable{mutableStateOf(old?.bucket ?: consumptionBucket(necessity))}
     var note by rememberSaveable{mutableStateOf(old?.note ?: "")};var fee by rememberSaveable{mutableStateOf("0.00")}
     var reason by rememberSaveable{mutableStateOf(if(old==null)"手动记录实际发生交易" else "")}
-    val origin=original ?: old?.originalId?.let{id->s.entries.find{it.id==id}}
     Form("${if(old!=null) "编辑" else "记录"}${Kind.valueOf(kind).label}",busy,close,submit={
-        require(accountId.isNotBlank()){ "请先添加资金账户" }
+        require(accountId.isNotBlank()){ if(offerHuabei)"请选择付款或退款账户" else "请先添加资金账户" }
         val selectedCategory=ExpenseTaxonomy.explicit(categoryGroup,subcategory) ?: ExpenseTaxonomy.default
         val e=Entry(old?.id ?: newId(),kind,Money.parse(amount,kind=="ADJUSTMENT"),accountId,date,if(kind=="EXPENSE")selectedCategory.group.name else category,bucket,
             if(kind=="TRANSFER") targetId else null,if(kind=="REFUND") origin?.id else null,old?.installmentId,note,false,old?.transferId,old?.incomePlanId,old?.incomePlanMonth,old?.repaymentId,old?.recurringOccurrenceId,
             if(kind=="EXPENSE")categoryGroup else "",if(kind=="EXPENSE")subcategory else "",if(kind=="EXPENSE")necessity else Necessity.UNDECIDED.name)
         val charge=if(kind=="TRANSFER"&&old==null)Money.parse(fee) else 0L
-        vm.execute({entry(e,reason,charge)}) {
+        vm.execute({entry(e,reason,charge,huabeiDay)}) {
             accountMemory.rememberSaved(s.profile.demo,e,old==null)
             close()
         }
     }) {
-        if(s.accounts.isEmpty())Notice("请先在“我的资金账户”中添加账户。",true)
+        if(s.accounts.isEmpty()&&!offerHuabei)Notice("请先在“我的资金账户”中添加账户。",true)
         Field(if(kind=="ADJUSTMENT") "余额修正金额（元，可为负）" else "金额（元）",amount,{amount=it},money=kind!="ADJUSTMENT")
-        Select(if(kind=="INCOME"||kind=="REFUND")"到账账户" else "付款 / 转出账户",s.accounts,s.accounts.find{it.id==accountId},{it.name+if(it.disabledOn!=null)"（已停用）" else ""}){accountId=it.id}
+        val accounts=s.accounts.map{it.id} + if(offerHuabei) listOf(HUABEI_ACCOUNT) else emptyList()
+        val accountLabel=when(kind){"INCOME","REFUND"->"到账账户";"EXPENSE"->"付款账户";else->"付款 / 转出账户"}
+        Select(accountLabel,accounts,accountId.takeIf{it in accounts},{id->
+            when {
+                id==HUABEI_ACCOUNT -> if(kind=="REFUND")"花呗（抵扣账单）" else "花呗（次月还款）"
+                else -> s.accountName(id)+if(s.accounts.any{it.id==id&&it.disabledOn!=null})"（已停用）" else ""
+            }
+        }){accountId=it}
         if(kind=="TRANSFER")Select("转入账户",s.accounts.filter{it.id!=accountId},s.accounts.find{it.id==targetId},{it.name}){targetId=it.id}
         if(kind=="INCOME")Select("收入来源",incomeCategories,category,{it}){category=it}
         if(kind=="EXPENSE") {
@@ -264,6 +285,12 @@ import java.time.format.DateTimeFormatter
             if(consumptionPending(origin.necessity,origin.bucket))ConsumptionLegacyNotice(origin.necessity,origin.bucket)
         }
         DateInput("实际发生日期 YYYY-MM-DD",date){date=it}
+        if(accountId==HUABEI_ACCOUNT&&kind=="EXPENSE") {
+            runCatching{ s.huabeiDueDate(LocalDate.parse(date),huabeiDay) }.getOrNull()?.let { due ->
+                Caption("将计入 ${due.take(7)} 花呗待还 · $due 还款")
+            }
+        }
+        if(accountId==HUABEI_ACCOUNT&&kind=="REFUND")Caption("退款抵扣原花呗账单，现金余额不变。")
         if(old==null)TeaSmall("默认填写北京时间当天，补记时可修改日期。")
         Field("备注（可选）",note,{note=it})
         if(old!=null) { Field("修改原因（可选）",reason,{reason=it});Notice("历史修改会重算余额与关联月份。已有修正差额不会自动变化，请复核。",true) }
@@ -274,7 +301,7 @@ import java.time.format.DateTimeFormatter
 @Composable private fun EntryDetail(s:Ledger,e:Entry,vm:WalletViewModel,busy:Boolean,close:()->Unit,open:(Editor)->Unit) {
     var voiding by remember{mutableStateOf(false)};var reason by rememberSaveable{mutableStateOf("")}
     Form("交易详情",busy,close,confirm=null) {
-        Pill(if(e.voided)"已撤销" else Kind.valueOf(e.kind).label,if(e.voided) Muted else Forest)
+        Pill(if(e.voided)"已撤销" else if(e.isHuabeiPayment)"花呗还款" else Kind.valueOf(e.kind).label,if(e.voided) Muted else Forest)
         Text("¥ ${Money.format(e.amount)}",fontSize=32.sp,fontWeight=FontWeight.SemiBold)
         Text(entryTitle(e,s),fontSize=17.sp,fontWeight=FontWeight.Medium)
         if(e.isConsumptionRecord()||e.kind=="REPAYMENT") {
@@ -290,6 +317,9 @@ import java.time.format.DateTimeFormatter
             Notice(if(e.repaymentConsumption)"这一笔同时是负债还款和消费，已经计入发生月份的分类消费与预算；没有另扣一笔钱。" else "这笔还款保留消费用途标签，只减少现金和欠款，不重复计入消费。")
         }
         Caption("日期 ${e.date}\n账户 ${s.accountName(e.accountId)}${if(e.toAccountId!=null) " → ${s.accountName(e.toAccountId)}" else ""}")
+        e.huabeiDueDate?.take(7)?.let { month ->
+            if(s.huabeiBills().any{it.month==month})TextButton(onClick={open(Editor("huabeiBill",month))}){Text("查看 $month 花呗账单 ›")}
+        }
         if(e.note.isNotBlank())Text(e.note,fontSize=13.sp,lineHeight=21.sp)
         e.incomePlanMonth?.let{Caption("对应 $it 的固定收入；修改这笔记录不会新增一次到账。")}
         if(e.kind=="REPAYMENT") {
@@ -308,13 +338,14 @@ import java.time.format.DateTimeFormatter
         charges.forEach{c->TextButton(onClick={open(Editor("detail",c.id))}){Text("查看独立手续费 ¥${Money.format(c.amount)} ›")}}
         if(!e.voided) {
             if(e.kind=="EXPENSE"||e.kind=="REPAYMENT")OutlinedButton(onClick={open(Editor("expenseMetadata",e.id))},modifier=Modifier.fillMaxWidth()){Text("修改分类与消费性质")}
-            if(e.kind!="REPAYMENT"&&e.recurringOccurrenceId==null)OutlinedButton(onClick={open(Editor("transaction",e.id,e.kind))},modifier=Modifier.fillMaxWidth()){Text("修改记录")}
+            if(e.kind!="REPAYMENT"&&!e.isHuabeiPayment&&e.recurringOccurrenceId==null)OutlinedButton(onClick={open(Editor("transaction",e.id,e.kind))},modifier=Modifier.fillMaxWidth()){Text("修改记录")}
             if(e.recurringOccurrenceId!=null)Notice("这笔记录来自固定收支。需要纠错时，请先撤销这次固定记账，再手动补记；组合扣款会一起撤销。")
             if(e.kind=="EXPENSE"&&s.refunds(e.id)<e.amount)OutlinedButton(onClick={open(Editor("refund",e.id))},modifier=Modifier.fillMaxWidth()){Text("登记到账退款")}
-            if(!voiding)TextButton(onClick={voiding=true}){Text(if(e.kind=="REPAYMENT")"撤销错误还款记录" else "撤销这笔记录",color=Red)}
+            if(!voiding)TextButton(onClick={voiding=true}){Text(if(e.kind=="REPAYMENT"||e.isHuabeiPayment)"撤销错误还款记录" else "撤销这笔记录",color=Red)}
             else {
                 Notice(when {
                     e.kind=="REPAYMENT" -> "这将撤销该期整笔还款，一起恢复所有付款账户的账本余额，并保留历史。"
+                    e.isHuabeiPayment -> "撤销后会恢复付款账户的账本余额，并把该期花呗账单重新列为待还。"
                     e.recurringOccurrenceId!=null -> "这将撤销该次固定收支的全部账户记录，并恢复账本余额；同一期次不会再次生成。"
                     e.kind=="EXPENSE"&&s.refunds(e.id)>0 -> "已有有效退款，请先撤销错误退款记录，才能撤销原消费。"
                     else -> "撤销后会恢复相应余额并保留历史。转账的独立手续费保持有效。"
@@ -435,10 +466,10 @@ import java.time.format.DateTimeFormatter
                 } else Notice("本月未设置预算，无法判断预算影响。",true)
             }
             if(s.balance(account)<p)Notice("付款账户余额不足。请先核对资金；其他账户的余额不代表此账户能直接支付。",true)
-            val due=s.unpaid().filter{it.date<=today().plusDays(30).toString()}
+            val due=s.pendingRepayments().filter{it.date<=today().plusDays(30).toString()}
             Text("已有义务与计划",fontWeight=FontWeight.SemiBold)
             if(due.isEmpty())Caption("未登记逾期及未来 30 天的待还款。这不代表不存在其他义务。")
-            due.forEach{i->AmountLine("${i.date} · ${s.debts.first{it.id==i.debtId}.name} 第${i.number}期",i.due)}
+            due.forEach{i->AmountLine("${i.date} · ${i.name}${i.number?.let{" 第${it}期"}.orEmpty()}",i.due)}
             s.goals.filterNot{it.archived}.forEach{g->AmountLine("${g.name} · 已存",g.saved);AmountLine("${g.name} · 还差",g.progress().remaining)}
             if(s.goals.filterNot{it.archived}.map{it.saved}.exactSum()>cashAfter)Notice("购买后现金会低于各计划填写的已存合计，可能影响储蓄安排，请核对。",true)
             Notice("预算、待还款和储蓄分别展示，尚未算成统一的可花金额。请结合接下来的生活开销决定是否购买。",true)
@@ -446,7 +477,7 @@ import java.time.format.DateTimeFormatter
     }
 }
 
-@Composable private fun ProfileForm(s:Ledger,vm:WalletViewModel,busy:Boolean,close:()->Unit,display:()->Unit,about:()->Unit,accounts:()->Unit) {
+@Composable private fun ProfileForm(s:Ledger,vm:WalletViewModel,busy:Boolean,close:()->Unit,display:()->Unit,about:()->Unit,accounts:()->Unit,huabei:()->Unit) {
     var name by rememberSaveable{mutableStateOf(s.profile.name)}
     Form("设置",busy,close,confirm="保存账本名称",submit={vm.execute({profile(name)},close)}) {
         Pill("本机离线账本")
@@ -454,6 +485,7 @@ import java.time.format.DateTimeFormatter
         OutlinedButton(onClick=display,modifier=Modifier.fillMaxWidth()){Text("主题、显示与动效")}
         OutlinedButton(onClick=about,modifier=Modifier.fillMaxWidth()){Text("共同设计与免责声明")}
         OutlinedButton(onClick=accounts,modifier=Modifier.fillMaxWidth()){Text("账户设置")}
+        OutlinedButton(onClick=huabei,modifier=Modifier.fillMaxWidth()){Text("花呗设置")}
         Caption("固定收支到期等待你确认，负债还款可按用途计入消费。App 不会操作真实支付账户。")
     }
 }

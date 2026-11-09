@@ -14,7 +14,7 @@ object ExpenseAccountPolicy {
 class ExpenseAccountMemory(private val prefs:SharedPreferences) {
     fun selected(s:Ledger,date:String)=ExpenseAccountPolicy.choose(s.accounts,prefs.getString(key(s.profile.demo),null),date)
     fun rememberSaved(demo:Boolean,e:Entry,isNew:Boolean) {
-        if(isNew&&e.kind=="EXPENSE"&&e.recurringOccurrenceId==null)
+        if(isNew&&e.kind=="EXPENSE"&&e.recurringOccurrenceId==null&&e.accountId!=HUABEI_ACCOUNT)
             prefs.edit().putString(key(demo),e.accountId).apply()
     }
     companion object {
