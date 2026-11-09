@@ -27,11 +27,11 @@ class MigrationTest {
             old.execSQL("INSERT INTO entries(id,kind,amount,accountId,date,category,bucket,note,voided,installmentId) VALUES('p','REPAYMENT',10000,'a','2026-01-01','负债还款','UNDECIDED','原流水',0,'i')")
             old.version=6
         } finally {old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_6_7).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_6_7,WalletDatabase.MIGRATION_7_8).build()
         try {
             val s=upgraded.walletDao().read();Rules.validate(s)
             assertEquals(90000L,s.cash());assertEquals(0L,s.usage("2026-01"));assertEquals("原流水",s.entries.single().note)
-            assertFalse(s.entries.single().repaymentConsumption);assertFalse(s.debts.single().repaymentsAreConsumption)
+            assertNull(s.entries.single().huabeiDueDate);assertFalse(s.entries.single().repaymentConsumption);assertFalse(s.debts.single().repaymentsAreConsumption)
             assertEquals("",s.debts.single().categoryGroupId);assertEquals(1,s.installments.size);assertTrue(s.unpaid().isEmpty())
         } finally {upgraded.close();context.deleteDatabase(name)}
     }
@@ -49,7 +49,7 @@ class MigrationTest {
             old.execSQL("INSERT INTO entries(id,kind,amount,accountId,date,category,bucket,note,voided,installmentId) VALUES('p','REPAYMENT',5000,'a','2026-01-01','还款','FREE','真实还款',0,'i1')")
             old.version=5
         }finally{old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7,WalletDatabase.MIGRATION_7_8).build()
         try{
             val before=upgraded.walletDao().read();Rules.validate(before);assertFalse(before.debts.single().archived);assertEquals(95000L,before.cash());assertEquals(5000L,before.unpaid().map{it.due}.exactSum())
             val repo=WalletRepository(upgraded);repo.archiveDebt("d",true);val after=upgraded.walletDao().read()
@@ -76,7 +76,7 @@ class MigrationTest {
             old.execSQL("INSERT INTO reminder_settings VALUES (1,1,'20:00','22:00','购物,美护,其他')")
             old.version=4
         }finally{old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7,WalletDatabase.MIGRATION_7_8).build()
         try {
             val s=upgraded.walletDao().read();Rules.validate(s)
             assertEquals(92000L,s.cash());assertEquals(-2000L,s.usage("2026-10"));assertTrue(s.categoryBudgets.isEmpty())
@@ -108,7 +108,7 @@ class MigrationTest {
             old.execSQL("INSERT INTO entries (id,kind,amount,accountId,date,category,bucket,note,voided,incomePlanId,incomePlanMonth) VALUES ('inc','INCOME',50000,'a',?,'生活费','FREE','旧收入',0,'a',?)",arrayOf(today().toString(),currentMonth()))
             old.version=2
         }finally{old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7,WalletDatabase.MIGRATION_7_8).build()
         try {
             val s=upgraded.walletDao().read();Rules.validate(s)
             assertEquals(289000L,s.cash());assertEquals(45678L,s.goals.single().saved);assertEquals(80000L,s.goals.single().intention)
@@ -138,7 +138,7 @@ class MigrationTest {
             old.execSQL("INSERT INTO entries VALUES ('e', 'EXPENSE', 50000, 'a', ?, '购物', 'FREE', NULL, NULL, NULL, '旧版消费', 0, NULL)",arrayOf(today().toString()))
             old.version=1
         }finally{old.close()}
-        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_1_2,WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7).build()
+        val upgraded=Room.databaseBuilder(context,WalletDatabase::class.java,name).addMigrations(WalletDatabase.MIGRATION_1_2,WalletDatabase.MIGRATION_2_3,WalletDatabase.MIGRATION_3_4,WalletDatabase.MIGRATION_4_5,WalletDatabase.MIGRATION_5_6,WalletDatabase.MIGRATION_6_7,WalletDatabase.MIGRATION_7_8).build()
         try {
             val s=upgraded.walletDao().read();Rules.validate(s)
             assertEquals("旧版个人账本",s.profile.name);assertEquals(200000L,s.cash());assertEquals(80000L,s.goals.single().intention);assertEquals(0L,s.goals.single().saved);assertTrue(s.incomePlans.isEmpty());assertNull(s.entries.single().incomePlanId)

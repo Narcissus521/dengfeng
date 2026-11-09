@@ -55,7 +55,7 @@ abstract class WalletDao {
         putCategoryBudgets(s.categoryBudgets)
     }
 }
-@Database(entities = [Profile::class, Account::class, Entry::class, Budget::class, CategoryBudget::class, Goal::class, Debt::class, Installment::class, Audit::class, IncomePlan::class, DebtCategory::class, RecurringRule::class, RecurringAllocation::class, RecurringOccurrence::class, ReminderSettings::class], version = 7, exportSchema = true)
+@Database(entities = [Profile::class, Account::class, Entry::class, Budget::class, CategoryBudget::class, Goal::class, Debt::class, Installment::class, Audit::class, IncomePlan::class, DebtCategory::class, RecurringRule::class, RecurringAllocation::class, RecurringOccurrence::class, ReminderSettings::class], version = 8, exportSchema = true)
 abstract class WalletDatabase : RoomDatabase() {
     abstract fun walletDao(): WalletDao
     companion object {
@@ -109,9 +109,14 @@ abstract class WalletDatabase : RoomDatabase() {
                 db.execSQL("ALTER TABLE recurring_occurrences ADD COLUMN postedDate TEXT")
             }
         }
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE entries ADD COLUMN huabeiDueDate TEXT")
+            }
+        }
         fun open(context: Context, demo: Boolean): WalletDatabase = Room.databaseBuilder(
             context.applicationContext, WalletDatabase::class.java, if (demo) "campus_demo.db" else "campus_wallet.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6,MIGRATION_6_7).enableMultiInstanceInvalidation().build() // No destructive migration, deletion or silent recovery.
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4,MIGRATION_4_5,MIGRATION_5_6,MIGRATION_6_7,MIGRATION_7_8).enableMultiInstanceInvalidation().build() // No destructive migration, deletion or silent recovery.
     }
 }
 
@@ -151,6 +156,8 @@ class WalletRepository(val db: WalletDatabase) {
     private fun describe(s: Ledger, id: String): String = when {
         id == "profile" -> s.profile.toString()
         id.startsWith("category-budget:") -> s.categoryBudgets.filter{it.month==id.removePrefix("category-budget:")}.toString()
+        id.startsWith("huabei:") -> s.huabeiBills().find { it.month == id.removePrefix("huabei:") }
+            ?.let { "${it.dueDate} · 待还 ¥${Money.format(it.remaining)}" } ?: "无"
         id == "reminder" -> s.reminder.toString()
         id == "recurring" -> "已处理 ${s.recurringOccurrences.size} 次，已记账 ${s.recurringOccurrences.count{it.status=="POSTED"}} 次"
         s.recurringRules.any { it.id == id } -> "${s.recurringRules.first{it.id==id}}\n${s.recurringAllocations.filter{it.ruleId==id}}"
@@ -171,8 +178,15 @@ class WalletRepository(val db: WalletDatabase) {
     suspend fun toggleAccount(id: String) = change(id, "账户状态", "用户手动切换账户启用状态") { s ->
         s.copy(accounts = s.accounts.map { if (it.id == id) it.copy(disabledOn = if (it.disabledOn == null) today().toString() else null) else it })
     }
-    suspend fun entry(e: Entry, reason: String = "手动记账", fee: Long = 0) = change(e.id, if (e.voided) "撤销交易" else "保存交易", reason) { s ->
-        var next = if (e.voided) s.copy(entries = s.entries.map { if (it.id == e.id) e else it }) else Rules.replaceEntry(s, e)
+    suspend fun entry(e: Entry, reason: String = "手动记账", fee: Long = 0, huabeiDay: Int = DEFAULT_HUABEI_DAY) = change(e.id, if (e.voided) "撤销交易" else "保存交易", reason) { s ->
+        val old = s.entries.find { it.id == e.id }
+        val saved = if (e.voided) e else {
+            require(!e.isHuabeiPayment && old?.isHuabeiPayment != true) { "请在花呗账单中登记还款" }
+            val due = if (e.kind == "EXPENSE" && e.accountId == HUABEI_ACCOUNT)
+                s.huabeiDueDate(LocalDate.parse(e.date), huabeiDay) else null
+            e.copy(huabeiDueDate = due)
+        }
+        var next = if (e.voided) s.copy(entries = s.entries.map { if (it.id == e.id) saved else it }) else Rules.replaceEntry(s, saved)
         if (fee > 0) {
             require(e.kind == Kind.TRANSFER.name && s.entries.none { it.id == e.id }) { "手续费只能在新转账时一并登记" }
             val charge = Entry(kind = Kind.EXPENSE.name, amount = fee, accountId = e.accountId, date = e.date,
@@ -181,6 +195,22 @@ class WalletRepository(val db: WalletDatabase) {
         }
         next
     }
+    internal suspend fun payHuabei(bill: HuabeiBill, accountId: String, date: String) =
+        change(newId(), "登记花呗还款", "用户确认已实际还款") { s ->
+            val current = s.huabeiBills().firstOrNull { it.month == bill.month }
+            require(current == bill && bill.remaining > 0) { "花呗账单已变化，请返回核对" }
+            require(s.accounts.any { it.id == accountId }) { "请选择实际扣款账户" }
+            Rules.replaceEntry(s, Entry(kind = "TRANSFER", amount = bill.remaining, accountId = accountId,
+                date = date, toAccountId = HUABEI_ACCOUNT, note = "${bill.month} 花呗还款", huabeiDueDate = bill.dueDate))
+        }
+    internal suspend fun updateHuabeiDueDate(bill: HuabeiBill, dueDate: String) =
+        change("huabei:${bill.month}", "修改花呗还款日", "按实际账单核对") { s ->
+            val current = s.huabeiBills().firstOrNull { it.month == bill.month }
+            require(current == bill && bill.remaining > 0) { "花呗账单已变化，请返回核对" }
+            require(YearMonth.from(LocalDate.parse(dueDate)).toString() == bill.month) { "请选择该账单月份内的还款日" }
+            val ids = bill.purchases.map { it.id }.toSet()
+            s.copy(entries = s.entries.map { if (it.id in ids) it.copy(huabeiDueDate = dueDate) else it })
+        }
     suspend fun expenseMetadata(id:String,group:String,leaf:String,necessity:String,bucket:String)=
         change(id,"修改分类与消费性质","只更新用途与性质，不改变付款金额、日期或合同关联") {s->
             val e=s.entries.first{it.id==id}

@@ -134,7 +134,7 @@ import androidx.compose.ui.platform.testTag
     }
 }
 fun entryTitle(e: Entry, s: Ledger): String = when(e.kind) {
-    "TRANSFER" -> "${s.accountName(e.accountId)} → ${s.accountName(e.toAccountId)}"
+    "TRANSFER" -> if(e.isHuabeiPayment)"花呗还款" else "${s.accountName(e.accountId)} → ${s.accountName(e.toAccountId)}"
     "REFUND" -> "${s.expenseCategory(e).let{if(it.group.children.isEmpty())it.group.name else it.leaf.name}}退款"
     "ADJUSTMENT" -> "余额校准"
     "REPAYMENT" -> if(e.categoryGroupId.isEmpty())"负债还款" else s.expenseCategory(e).label
@@ -153,8 +153,8 @@ fun entryTitle(e: Entry, s: Ledger): String = when(e.kind) {
             Caption("${e.date.substring(5)} · ${s.accountName(e.accountId)}${if(e.voided) " · 已撤销" else ""}")
         }
         Column(horizontalAlignment=Alignment.End,verticalArrangement=Arrangement.spacedBy(4.dp)) {
-            Text("${if(e.kind=="TRANSFER") "" else if(positive) "+" else "−"}${Money.format(kotlin.math.abs(e.amount))}",fontSize=15.sp,fontWeight=FontWeight.SemiBold,color=tint)
-            Caption(if(e.kind=="REPAYMENT")"负债还款${if(e.repaymentConsumption)" · 已计消费" else ""}" else if(e.isConsumptionRecord())s.consumptionSource(e).let{if(consumptionPending(it.necessity,it.bucket))"历史待确认" else Necessity.valueOf(it.necessity).label} else Kind.valueOf(e.kind).label)
+            Text("${if(e.kind=="TRANSFER"&&!e.isHuabeiPayment) "" else if(positive) "+" else "−"}${Money.format(kotlin.math.abs(e.amount))}",fontSize=15.sp,fontWeight=FontWeight.SemiBold,color=tint)
+            Caption(if(e.isHuabeiPayment)"还款" else if(e.kind=="REPAYMENT")"负债还款${if(e.repaymentConsumption)" · 已计消费" else ""}" else if(e.isConsumptionRecord())s.consumptionSource(e).let{if(consumptionPending(it.necessity,it.bucket))"历史待确认" else Necessity.valueOf(it.necessity).label} else Kind.valueOf(e.kind).label)
         }
     }
 }

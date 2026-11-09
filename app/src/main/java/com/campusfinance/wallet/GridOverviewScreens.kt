@@ -67,7 +67,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
     var summary by rememberSaveable{mutableIntStateOf(0)}
     val purchase by rememberPurchase(s.profile.demo)
     val b=s.budget(month);val used=s.usage(month)
-    val pending=s.unpaid().filter{it.date.startsWith(month)}.sortedBy{it.date}
+    val pending=s.pendingRepayments().filter{it.date.startsWith(month)}
     val goals=s.goals.filterNot{it.archived}
     OverviewGrid(homeCards) { card,info->
         val tall=info.detailed
@@ -121,7 +121,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
                         if(pending.isEmpty())GridNote("本月没有待还款项")
                         else if(tall)pending.take(if(info.height>330.dp)3 else 2).forEach { p->
                             GridDetails(p.date.substring(5),p.due)
-                            if(info.height>320.dp)GridNote(s.debts.firstOrNull{it.id==p.debtId}?.name ?: "还款计划",lines=1)
+                            if(info.height>320.dp)GridNote(p.name,lines=1)
                         } else GridNote("最近 ${pending.first().date.substring(5)} · 共 ${pending.size} 期待还",lines=2)
                     }
                 }
@@ -186,7 +186,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
 
 @Composable fun GridTeaPlanning(s:Ledger,month:String,open:(Editor)->Unit) {
     val g=s.goals.firstOrNull{!it.archived}
-    val due=s.unpaid().filter{it.date.startsWith(month)}.sortedBy{it.date}
+    val due=s.pendingRepayments().filter{it.date.startsWith(month)}
     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(6.dp)) {
         TeaTitle("资金规划","预算、还款与储蓄，一起安排。")
         OverviewGrid(listOf(OverviewCard.PLAN_SAVINGS,OverviewCard.PLAN_DEBT),Modifier.weight(1f)) {card,info->
