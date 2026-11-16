@@ -47,6 +47,7 @@ private data class BookResult(val revision:Long,val query:RecordQuery,val rows:L
     val natureLabel=Necessity.entries.find{it.name==necessity}?.label ?: "全部性质"
     val filtering=categoryGroup.isNotEmpty()||necessity.isNotEmpty()||account.isNotEmpty()||search.isNotBlank()||showVoided
     Form(title ?: category?.let{"${it}消费记录"} ?: "本月账本",close=close,confirm=null) {
+        TeaLink("分享到 ChatGPT 分析","预览并分享近三个月消费资料"){open(Editor("analysisShare"))}
         TeaCard(tint=LocalWalletColors.current.hero,modifier=Modifier.testTag("records-summary").semantics{result?.summary?.let{contentDescription="收入 ¥${Money.format(it.income)}，支出 ¥${Money.format(it.expense)}，退款 ¥${Money.format(it.refunds)}，净消费 ¥${Money.format(it.net)}，还款 ¥${Money.format(it.repayments)}"}}) {
             if(range==null)MonthPicker(month,{month=it;group=0}) else TeaSmall("${periods.firstOrNull() ?: month} — ${periods.lastOrNull() ?: month}")
             result?.summary?.let{summary->

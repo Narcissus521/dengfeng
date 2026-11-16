@@ -43,6 +43,11 @@ class HuabeiUiTest : TeaUiScenario() {
             tapTag("card-PLAN_DEBT")
             tap("$month 花呗账单")
             tap("登记实际还款")
+            fill("本次还款金额（元）", "5.00")
+            submit()
+            ui.waitUntil(10000) { runBlocking { db.walletDao().read().cash() == before.cash() - 500 } }
+            assertEquals(bill.remaining - 500, runBlocking { db.walletDao().read().huabeiBills().single { it.month == month }.remaining })
+            tap("登记实际还款")
             submit()
             ui.waitUntil(10000) { runBlocking { db.walletDao().read().cash() == before.cash() - bill.remaining } }
             find(hasText("已结清"))

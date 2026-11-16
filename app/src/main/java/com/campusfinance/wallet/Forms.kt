@@ -108,7 +108,8 @@ import java.time.format.DateTimeFormatter
             "removedDebtList" -> DebtListForm(s,close,open,removed=true)
             "debtList" -> DebtListForm(s,close,open)
             "huabeiBill" -> HuabeiBillForm(s,e.id!!,close,open)
-            "huabeiRepay" -> HuabeiRepayForm(s,e.id!!,vm,busy,close)
+            "huabeiRepay" -> HuabeiRepayForm(s,e.id,vm,busy,close)
+            "analysisShare" -> AnalysisShareForm(s,close)
             "huabeiDueDate" -> HuabeiDueDateForm(s,e.id!!,vm,busy,close)
             "huabeiSettings" -> HuabeiSettingsForm(close)
             "accounts" -> AccountsForm(s,busy,close,open)
@@ -119,8 +120,8 @@ import java.time.format.DateTimeFormatter
             "monthlyIncome" -> MonthlyIncomeForm(s,month,busy,close,open)
             "receiveIncome" -> ReceiveIncomeForm(s,e.id!!,e.kind ?: month,vm,busy,close)
             "calibrate" -> CalibrationForm(s,e.id!!,vm,busy,close)
-            "transaction" -> EntryForm(s,s.entries.find{it.id==e.id},e.kind ?: "EXPENSE",null,vm,busy,close)
-            "refund" -> EntryForm(s,null,"REFUND",s.entries.first{it.id==e.id},vm,busy,close)
+            "transaction" -> EntryForm(s,s.entries.find{it.id==e.id},e.kind ?: "EXPENSE",null,vm,busy,close,open)
+            "refund" -> EntryForm(s,null,"REFUND",s.entries.first{it.id==e.id},vm,busy,close,open)
             "detail" -> EntryDetail(s,s.entries.first{it.id==e.id},vm,busy,close,open)
             "quickSaving" -> QuickSavingForm(s,e.id!!,vm,busy,close)
             "quickRecurring" -> QuickRecurringForm(s,e.kind ?: "EXPENSE",vm,busy,close)
@@ -219,7 +220,7 @@ import java.time.format.DateTimeFormatter
     }
 }
 
-@Composable private fun EntryForm(s:Ledger,old:Entry?,kindText:String,original:Entry?,vm:WalletViewModel,busy:Boolean,close:()->Unit) {
+@Composable private fun EntryForm(s:Ledger,old:Entry?,kindText:String,original:Entry?,vm:WalletViewModel,busy:Boolean,close:()->Unit,open:(Editor)->Unit) {
     val context=LocalContext.current
     val prefs=remember(context){context.getSharedPreferences("wallet_settings",android.content.Context.MODE_PRIVATE)}
     val accountMemory=remember(prefs){ExpenseAccountMemory(prefs)}
@@ -227,7 +228,7 @@ import java.time.format.DateTimeFormatter
     val kind=old?.kind ?: kindText
     val origin=original ?: old?.originalId?.let{id->s.entries.find{it.id==id}}
     val creditRefund=kind=="REFUND" && origin?.accountId==HUABEI_ACCOUNT &&
-        s.huabeiBills().any { it.dueDate==origin.huabeiDueDate && it.payments.isEmpty() }
+        s.huabeiBills().any { it.dueDate==origin.huabeiDueDate && it.remaining>0 }
     val offerHuabei=kind=="EXPENSE" && old?.recurringOccurrenceId==null && old?.transferId==null ||
         creditRefund || old?.accountId==HUABEI_ACCOUNT
     var amount by rememberSaveable{mutableStateOf(old?.amount?.let{Money.plain(it)} ?: "")}
@@ -258,6 +259,7 @@ import java.time.format.DateTimeFormatter
             close()
         }
     }) {
+        if(kind=="EXPENSE"&&old==null)TeaLink("偿还花呗","选择账单，可提前偿还部分金额"){open(Editor("huabeiRepay"))}
         if(s.accounts.isEmpty()&&!offerHuabei)Notice("请先在“我的资金账户”中添加账户。",true)
         Field(if(kind=="ADJUSTMENT") "余额修正金额（元，可为负）" else "金额（元）",amount,{amount=it},money=kind!="ADJUSTMENT")
         val accounts=s.accounts.map{it.id} + if(offerHuabei) listOf(HUABEI_ACCOUNT) else emptyList()

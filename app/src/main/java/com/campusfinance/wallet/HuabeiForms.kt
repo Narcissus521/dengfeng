@@ -34,6 +34,7 @@ internal fun HuabeiBillForm(s: Ledger, month: String, close: () -> Unit, open: (
             Caption("这个月没有花呗账单。")
         } else {
             AmountLine("账单金额", bill.amount)
+            AmountLine("已还金额", bill.payments.map { it.amount }.exactSum())
             AmountLine("剩余待还", bill.remaining, Forest)
             Caption("还款日 ${bill.dueDate}")
             if (bill.remaining > 0) {
@@ -52,24 +53,38 @@ internal fun HuabeiBillForm(s: Ledger, month: String, close: () -> Unit, open: (
 }
 
 @Composable
-internal fun HuabeiRepayForm(s: Ledger, month: String, vm: WalletViewModel, busy: Boolean, close: () -> Unit) {
-    val bill = s.huabeiBills().firstOrNull { it.month == month && it.remaining > 0 }
+internal fun HuabeiRepayForm(s: Ledger, month: String?, vm: WalletViewModel, busy: Boolean, close: () -> Unit) {
+    val bills = s.huabeiBills().filter { it.remaining > 0 }
+    var selectedMonth by rememberSaveable { mutableStateOf(month ?: bills.firstOrNull()?.month.orEmpty()) }
+    if (month == null && bills.isNotEmpty() && bills.none { it.month == selectedMonth }) {
+        selectedMonth = bills.first().month
+    }
+    val bill = bills.firstOrNull { it.month == selectedMonth }
+    var amount by rememberSaveable(selectedMonth) { mutableStateOf(bill?.remaining?.let { Money.plain(it) }.orEmpty()) }
+    var amountBasis by rememberSaveable { mutableStateOf(bill?.remaining) }
+    if (amountBasis != bill?.remaining) {
+        amountBasis = bill?.remaining
+        amount = bill?.remaining?.let { Money.plain(it) }.orEmpty()
+    }
     var date by rememberSaveable { mutableStateOf(today().toString()) }
     var accountId by rememberSaveable { mutableStateOf(s.accounts.firstOrNull { it.disabledOn == null }?.id.orEmpty()) }
     val accounts = s.accounts.filter { date >= it.start && (it.disabledOn == null || date < it.disabledOn) }
     Form("登记花呗还款", busy, close, confirm = if (bill != null && accounts.isNotEmpty()) "确认还款记录" else null,
         submit = {
             require(accounts.any { it.id == accountId }) { "请选择实际扣款账户" }
-            if (bill != null) vm.execute({ payHuabei(bill, accountId, date) }, close)
+            val value = Money.parse(amount)
+            if (bill != null) vm.execute({ payHuabei(bill, accountId, date, value) }, close)
         }) {
         if (bill == null) {
             Caption("这期账单已经结清或已移除。")
         } else {
-            AmountLine("$month 花呗待还", bill.remaining)
+            Select("偿还哪期账单", bills, bill, { "${it.month} · 待还 ¥${Money.format(it.remaining)}" }) { selectedMonth = it.month }
+            AmountLine("$selectedMonth 花呗待还", bill.remaining)
+            Field("本次还款金额（元）", amount, { amount = it }, money = true)
             Select("实际扣款账户", accounts, accounts.find { it.id == accountId }, { it.name }) { accountId = it.id }
             DateInput("实际还款日期 YYYY-MM-DD", date) { date = it }
             if (accounts.isEmpty()) Notice("请选择有效的还款日期，并先添加实际扣款的资金账户。", true)
-            Caption("确认后整期结清，扣减所选账户的账本余额。消费已记在购买当天。")
+            Caption("按本次金额扣减所选账户余额，剩余金额继续待还。消费已记在购买当天。")
         }
     }
 }

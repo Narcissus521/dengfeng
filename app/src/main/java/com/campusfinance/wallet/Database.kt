@@ -195,12 +195,13 @@ class WalletRepository(val db: WalletDatabase) {
         }
         next
     }
-    internal suspend fun payHuabei(bill: HuabeiBill, accountId: String, date: String) =
+    internal suspend fun payHuabei(bill: HuabeiBill, accountId: String, date: String, amount: Long = bill.remaining) =
         change(newId(), "登记花呗还款", "用户确认已实际还款") { s ->
             val current = s.huabeiBills().firstOrNull { it.month == bill.month }
             require(current == bill && bill.remaining > 0) { "花呗账单已变化，请返回核对" }
+            require(amount in 1..bill.remaining) { "本次还款金额须大于零且不超过剩余待还" }
             require(s.accounts.any { it.id == accountId }) { "请选择实际扣款账户" }
-            Rules.replaceEntry(s, Entry(kind = "TRANSFER", amount = bill.remaining, accountId = accountId,
+            Rules.replaceEntry(s, Entry(kind = "TRANSFER", amount = amount, accountId = accountId,
                 date = date, toAccountId = HUABEI_ACCOUNT, note = "${bill.month} 花呗还款", huabeiDueDate = bill.dueDate))
         }
     internal suspend fun updateHuabeiDueDate(bill: HuabeiBill, dueDate: String) =
@@ -208,7 +209,7 @@ class WalletRepository(val db: WalletDatabase) {
             val current = s.huabeiBills().firstOrNull { it.month == bill.month }
             require(current == bill && bill.remaining > 0) { "花呗账单已变化，请返回核对" }
             require(YearMonth.from(LocalDate.parse(dueDate)).toString() == bill.month) { "请选择该账单月份内的还款日" }
-            val ids = bill.purchases.map { it.id }.toSet()
+            val ids = (bill.purchases + bill.payments).map { it.id }.toSet()
             s.copy(entries = s.entries.map { if (it.id in ids) it.copy(huabeiDueDate = dueDate) else it })
         }
     suspend fun expenseMetadata(id:String,group:String,leaf:String,necessity:String,bucket:String)=

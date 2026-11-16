@@ -47,11 +47,11 @@ internal fun Ledger.validateHuabei() {
     }) { "还款须关联有效花呗账单，请先撤销还款再修改原消费" }
     bills.forEach { bill ->
         require(bill.amount in 0..MAX_MONEY) { "花呗账单金额超出范围" }
-        require(bill.payments.size <= 1) { "这期花呗已经登记还款" }
-        bill.payments.singleOrNull()?.let { payment ->
-            require(payment.amount == bill.amount &&
-                (bill.purchases + bill.refunds).all { it.date <= payment.date }
-            ) { "这期花呗已结清，请先撤销还款再调整账单。退款请按实际到账账户登记" }
+        require(bill.remaining >= 0) { "已还金额超过账单金额，请先核对或撤销还款，退款可按实际到账账户登记" }
+        bill.payments.forEach { payment ->
+            val incurred = bill.purchases.filter { it.date <= payment.date }.map { it.amount }.exactSum()
+            val repaid = bill.payments.filter { it.date <= payment.date }.map { it.amount }.exactSum()
+            require(repaid <= incurred) { "还款不能早于对应消费，或超过当时已消费金额" }
         }
     }
 }

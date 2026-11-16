@@ -53,7 +53,7 @@ class HuabeiRepositoryTest {
 
         repo.payHuabei(bill, "bank", today().toString())
         assertTrue(runCatching { repo.payHuabei(bill, "bank", today().toString()) }.isFailure)
-        assertTrue(runCatching { repo.entry(purchase.copy(amount = 12500)) }.isFailure)
+        assertTrue(runCatching { repo.entry(purchase.copy(amount = 1000)) }.isFailure)
         val paid = read()
         val payment = paid.huabeiBills().single().payments.single()
         assertEquals(87000L, paid.cash())
@@ -68,6 +68,31 @@ class HuabeiRepositoryTest {
         repo.voidEntry(refund.id, "更正退款")
         repo.voidEntry(purchase.id, "更正消费")
         assertEquals(3000L, read().pendingRepayments().single().due)
+    }
+
+    @Test
+    fun partialPrepaymentCanBeFollowedByPurchasesRefundsAndMorePayments() = runBlocking {
+        repo.entry(purchase)
+        val first = read().huabeiBills().single()
+        repo.payHuabei(first, "bank", today().toString(), 3000)
+        assertEquals(9000L, read().huabeiBills().single().remaining)
+        assertEquals(97000L, read().cash())
+        assertTrue(runCatching { repo.payHuabei(first, "bank", today().toString(), 3000) }.isFailure)
+        repo.entry(purchase.copy(id = newId(), amount = 2000))
+        repo.entry(Entry(kind = "REFUND", amount = 1000, accountId = HUABEI_ACCOUNT,
+            date = today().toString(), originalId = purchase.id))
+        val partial = read().huabeiBills().single()
+        assertEquals(10000L, partial.remaining)
+        assertTrue(runCatching { repo.payHuabei(partial, "bank", today().toString(), 10001) }.isFailure)
+        repo.updateHuabeiDueDate(partial, "${currentMonth()}-20")
+        repo.payHuabei(read().huabeiBills().single(), "bank", today().toString(), 4000)
+        val state = read()
+        assertEquals(6000L, state.huabeiBills().single().remaining)
+        assertEquals(93000L, state.cash())
+        assertEquals(state.huabeiBills(), Backup.decode(Backup.encode(state)).huabeiBills())
+        repo.voidEntry(state.huabeiBills().single().payments.first().id, "撤销部分还款")
+        assertEquals(9000L, read().huabeiBills().single().remaining)
+        assertEquals(96000L, read().cash())
     }
 
     @Test
