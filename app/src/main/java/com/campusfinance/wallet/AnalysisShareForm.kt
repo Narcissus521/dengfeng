@@ -5,11 +5,14 @@ import android.content.Intent
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.unit.dp
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
@@ -23,9 +26,14 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
     var month by rememberSaveable { mutableStateOf(currentMonth()) }
     var details by rememberSaveable { mutableStateOf(false) }
     var plans by rememberSaveable { mutableStateOf(false) }
+    var showReport by rememberSaveable { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    val report = remember(s.profile.revision, month, details, plans) {
-        s.analysisShare(YearMonth.parse(month), details, plans)
+    val today = today()
+    val overview = remember(s.profile.revision, month, today) {
+        AnalysisShareOverview(s, YearMonth.parse(month), today)
+    }
+    val report = remember(s.profile.revision, month, details, plans, today) {
+        s.analysisShare(YearMonth.parse(month), details, plans, today)
     }
     Form("分享到 ChatGPT 分析", close = close, confirm = "选择分享应用", submit = {
         val folder = File(context.cacheDir, "analysis-share").apply { mkdirs() }
@@ -47,19 +55,35 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
         }
     }) {
         MonthPicker(month, { month = minOf(it, currentMonth()) })
-        Caption("生成截至所选月份的近三个月资料。分享后在接收应用里确认发送，分析与建议会在聊天中返回。")
-        Row(Modifier.fillMaxWidth().toggleable(details, role = Role.Checkbox, onValueChange = { details = it }),
+        TeaCard {
+            Text("同期净消费")
+            AmountLine("${overview.month} 1–${overview.days} 日", overview.current)
+            AmountLine("${overview.previousMonth} 1–${overview.days} 日", overview.previous)
+            Caption(overview.changeLabel)
+        }
+        TeaCard {
+            Text("分类预算")
+            if (overview.budgets.isEmpty()) Caption("所选月份未设置分类预算。")
+            overview.budgets.forEach { budget ->
+                Caption("${budget.name} · 已用 ¥${Money.format(budget.spent)} / 预算 ¥${Money.format(budget.planned)}")
+                if (budget.remaining < 0) AmountLine("超出", -budget.remaining, Red)
+                else AmountLine("剩余", budget.remaining)
+            }
+        }
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(details, role = Role.Checkbox, onValueChange = { details = it }),
             verticalAlignment = Alignment.CenterVertically) {
             Checkbox(details, null); Text("包含逐笔消费和退款")
         }
-        Row(Modifier.fillMaxWidth().toggleable(plans, role = Role.Checkbox, onValueChange = { plans = it }),
+        Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(plans, role = Role.Checkbox, onValueChange = { plans = it }),
             verticalAlignment = Alignment.CenterVertically) {
             Checkbox(plans, null); Text("包含当前余额、待还和储蓄规划")
         }
-        Caption("默认包含月度金额、分类及预算。账户名称、备注、内部编号和修改历史会省略。")
+        Caption("分享资料覆盖所选月份及之前两个月。请在接收应用中确认发送。")
         error?.let { Notice(it, true) }
-        Text("分享内容预览")
-        report.take(12000).chunked(400).forEach { Text(it) }
-        if (report.length > 12000) Caption("预览显示前 12000 字，分享文件包含所选资料全文。")
+        TextButton(onClick = { showReport = !showReport }) { Text(if (showReport) "收起分享资料" else "预览完整分享资料") }
+        if (showReport) {
+            report.take(12000).chunked(400).forEach { Text(it) }
+            if (report.length > 12000) Caption("预览显示前 12000 字，分享文件包含所选资料全文。")
+        }
     }
 }

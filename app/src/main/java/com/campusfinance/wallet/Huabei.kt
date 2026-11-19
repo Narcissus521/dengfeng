@@ -17,7 +17,8 @@ internal data class HuabeiBill(
 ) {
     val month get() = dueDate.take(7)
     val amount get() = purchases.map { it.amount }.exactSum() - refunds.map { it.amount }.exactSum()
-    val remaining get() = amount - payments.map { it.amount }.exactSum()
+    val paid get() = payments.map { it.amount }.exactSum()
+    val remaining get() = amount - paid
 }
 
 internal fun Ledger.huabeiBills(): List<HuabeiBill> {

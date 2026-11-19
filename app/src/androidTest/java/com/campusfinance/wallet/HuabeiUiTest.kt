@@ -47,6 +47,11 @@ class HuabeiUiTest : TeaUiScenario() {
             submit()
             ui.waitUntil(10000) { runBlocking { db.walletDao().read().cash() == before.cash() - 500 } }
             assertEquals(bill.remaining - 500, runBlocking { db.walletDao().read().huabeiBills().single { it.month == month }.remaining })
+            navigate("首页")
+            tap("下月待还")
+            find(hasText("待还总额"))
+            find(hasText("已还"))
+            tap("花呗")
             tap("登记实际还款")
             submit()
             ui.waitUntil(10000) { runBlocking { db.walletDao().read().cash() == before.cash() - bill.remaining } }

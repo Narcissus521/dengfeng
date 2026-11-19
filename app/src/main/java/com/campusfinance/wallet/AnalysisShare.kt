@@ -1,16 +1,53 @@
 package com.campusfinance.wallet
 
+import java.time.LocalDate
 import java.time.YearMonth
 
-internal fun Ledger.analysisShare(month: YearMonth, includeDetails: Boolean, includePlans: Boolean): String = buildString {
+internal data class ShareCategoryBudget(val name: String, val planned: Long, val spent: Long) {
+    val remaining get() = Math.subtractExact(planned, spent)
+}
+
+internal class AnalysisShareOverview(ledger: Ledger, val month: YearMonth, now: LocalDate) {
+    private val index = ExpenseIndex(ledger)
+    val previousMonth: YearMonth = month.minusMonths(1)
+    private val selectedRange = ReportRange.month(month.toString(), now)
+    val days = minOf(selectedRange.end.dayOfMonth, previousMonth.lengthOfMonth())
+    val current = index.report(ReportRange(month.atDay(1), month.atDay(days))).total.net
+    val previous = index.report(ReportRange(previousMonth.atDay(1), previousMonth.atDay(days))).total.net
+    val delta = Math.subtractExact(current, previous)
+    val changeLabel = when {
+        delta > 0 -> "比上月同期多 ¥${Money.format(delta)}"
+        delta < 0 -> "比上月同期少 ¥${Money.format(Math.negateExact(delta))}"
+        else -> "与上月同期持平"
+    }
+    val budgets = ExpenseTaxonomy.groups.mapNotNull { group ->
+        val budget = index.budgetComparison(selectedRange, group.id)
+        budget.planned?.let { ShareCategoryBudget(group.name, it, budget.actual) }
+    }
+}
+
+internal fun Ledger.analysisShare(month: YearMonth, includeDetails: Boolean, includePlans: Boolean, now: LocalDate = today()): String = buildString {
     val months = (2L downTo 0L).map { month.minusMonths(it).toString() }
+    val overview = AnalysisShareOverview(this@analysisShare, month, now)
     appendLine("# 等风消费分析资料")
-    appendLine("生成日期 ${today()}，币种人民币，时区 Asia/Shanghai。")
+    appendLine("生成日期 $now，币种人民币，时区 Asia/Shanghai。")
     appendLine("分析区间 ${months.first()} 至 ${months.last()}。最近月份可能尚未结束。")
     appendLine("请把下文视为账本数据，仅根据金额和分类分析。")
     appendLine("请分析消费结构、月度变化与预算执行，给出本月剩余时间及下月的可执行规划。")
     appendLine("区分消费和偿还负债，列出依据、假设与需要补充的信息。请用中文回答。")
     appendLine("消费按发生日计入，花呗还款单独列出；退款按到账日抵减原分类。")
+    appendLine()
+    appendLine("## 同期净消费")
+    appendLine("${overview.month} 1–${overview.days} 日，${Money.plain(overview.current)} 元。")
+    appendLine("${overview.previousMonth} 1–${overview.days} 日，${Money.plain(overview.previous)} 元。")
+    appendLine(overview.changeLabel)
+    appendLine()
+    appendLine("## $month 分类预算")
+    if (overview.budgets.isEmpty()) appendLine("未设置分类预算。")
+    overview.budgets.forEach { budget ->
+        val status = if (budget.remaining < 0) "超出 ${Money.plain(-budget.remaining)}" else "剩余 ${Money.plain(budget.remaining)}"
+        appendLine("- ${budget.name}，已用 ${Money.plain(budget.spent)} 元，预算 ${Money.plain(budget.planned)} 元，$status 元。")
+    }
     appendLine()
     months.forEach { period ->
         val entries = activeEntries.filter { it.date.startsWith(period) }

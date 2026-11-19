@@ -30,7 +30,7 @@ internal val LocalQuickEditor=staticCompositionLocalOf<((Editor)->Unit)?>{null}
     val budget=s.budget(month);val used=s.usage(month)
     val quick=LocalQuickEditor.current
     val quickState=LocalLedgerQuickState.current
-    val goals=s.goals.filterNot{it.archived};val pending=s.pendingRepayments().filter{it.date.startsWith(month)}
+    val goals=s.goals.filterNot{it.archived};val pending=s.pendingRepayments()
     val latest=remember(s.profile.revision,month){s.activeEntries.asReversed().filter{it.date.startsWith(month)}.sortedByDescending{it.date}.take(2)}
     val purchase by rememberPurchase(s.profile.demo)
     var summary by rememberSaveable{mutableIntStateOf(0)}
@@ -58,12 +58,18 @@ internal val LocalQuickEditor=staticCompositionLocalOf<((Editor)->Unit)?>{null}
         }
         LedgerSection("资金安排","还款与储蓄"){open(Editor("goalList"))}
         Row(Modifier.fillMaxWidth().ledgerMaterial(LocalWalletColors.current.hero,8f,inset=true).padding(12.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f).ledgerQuickActions(QuickTarget(OverviewCard.HOME_DEBT)).clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("debtList"))}.padding(4.dp)){
-                TeaSmall("本月待还");GridMoney(pending.map{it.due}.exactSum(),font=24);TeaSmall("查看还款计划 ›")
+            listOf("本月待还" to ym, "下月待还" to ym.plusMonths(1)).forEach { (label, period) ->
+                Column(Modifier.weight(1f).ledgerQuickActions(QuickTarget(OverviewCard.HOME_DEBT)).clickable {
+                    if (quickState?.sourceClickAllowed()!=false) open(Editor("monthlyRepayment",period.toString()))
+                }.padding(4.dp)) {
+                    TeaSmall(label)
+                    GridMoney(pending.filter { it.date.startsWith(period.toString()) }.map { it.due }.exactSum(),font=24)
+                    TeaSmall("查看明细 ›")
+                }
             }
-            Column(Modifier.weight(1f).ledgerQuickActions(QuickTarget(OverviewCard.HOME_SAVINGS)).clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("goalList"))}.padding(4.dp)){
-                TeaSmall("储蓄已存");GridMoney(goals.map{it.saved}.exactSum(),font=24);TeaSmall(if(goals.size==1)goals.first().name else "${goals.size} 个储蓄目标 ›")
-            }
+        }
+        TeaCard(card=OverviewCard.HOME_SAVINGS, padding=12.dp, onClick={open(Editor("goalList"))}) {
+            AmountLine("储蓄已存", goals.map { it.saved }.exactSum())
         }
         LedgerSection("最近记录","全部记录"){open(Editor("recordBook",kind=month))}
         TeaCard(padding=12.dp,spacing=0.dp){

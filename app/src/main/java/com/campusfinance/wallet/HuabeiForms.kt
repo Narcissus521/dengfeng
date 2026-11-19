@@ -34,7 +34,7 @@ internal fun HuabeiBillForm(s: Ledger, month: String, close: () -> Unit, open: (
             Caption("这个月没有花呗账单。")
         } else {
             AmountLine("账单金额", bill.amount)
-            AmountLine("已还金额", bill.payments.map { it.amount }.exactSum())
+            AmountLine("已还金额", bill.paid)
             AmountLine("剩余待还", bill.remaining, Forest)
             Caption("还款日 ${bill.dueDate}")
             if (bill.remaining > 0) {

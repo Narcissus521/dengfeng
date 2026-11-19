@@ -107,6 +107,7 @@ import java.time.format.DateTimeFormatter
             "restoreDebt" -> DebtRemovalForm(s,e.id!!,false,vm,busy,close)
             "removedDebtList" -> DebtListForm(s,close,open,removed=true)
             "debtList" -> DebtListForm(s,close,open)
+            "monthlyRepayment" -> MonthlyRepaymentForm(s,YearMonth.parse(e.id ?: month),close,open)
             "huabeiBill" -> HuabeiBillForm(s,e.id!!,close,open)
             "huabeiRepay" -> HuabeiRepayForm(s,e.id,vm,busy,close)
             "analysisShare" -> AnalysisShareForm(s,close)
