@@ -103,15 +103,15 @@ import androidx.compose.ui.platform.testTag
         Box(Modifier.fillMaxWidth(displayed).fillMaxHeight().clip(CircleShape).background(if(used>total) Red else color))
     }
 }
-@Composable fun AmountLine(label: String, amount: Long, color: Color = Ink) {
+@Composable fun AmountLine(label: String, amount: Long, color: Color = Ink, amountModifier:Modifier=Modifier) {
     Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
-        Text(label,fontSize=13.sp,color=Muted);AnimatedMoney(amount,color=color)
+        Text(label,fontSize=13.sp,color=Muted);AnimatedMoney(amount,modifier=amountModifier,color=color)
     }
 }
 @Composable fun EmptyState(title: String, detail: String, action: String? = null, onClick: () -> Unit = {}) {
     CardBox {
         TileIcon("book");Text(title,fontWeight=FontWeight.SemiBold,fontSize=17.sp);Caption(detail)
-        if(action!=null) Button(onClick=onClick,shape=RoundedCornerShape(13.dp)) { Text(action) }
+        if(action!=null) PhysicalButton(onClick=onClick,radius=13.dp,shape=RoundedCornerShape(13.dp)) { Text(action) }
     }
 }
 @Composable fun <T> ChoiceRow(items: List<T>, selected: T, label: (T)->String, onSelect:(T)->Unit) {
@@ -146,7 +146,9 @@ fun entryTitle(e: Entry, s: Ledger): String = when(e.kind) {
     val positive = e.kind in listOf("INCOME","REFUND") || (e.kind=="ADJUSTMENT" && e.amount>0)
     val tint = when { e.voided -> Muted; positive -> Blue; e.kind=="TRANSFER" -> Blue; else -> Ink }
     val icon = when(e.kind) { "INCOME","REFUND"->"income";"TRANSFER"->"transfer";"REPAYMENT"->"plan";else->when(s.expenseCategory(e).group.id){"food"->"food";"education"->"book";else->"bag"} }
-    Row(Modifier.fillMaxWidth().ledgerQuickActions(QuickTarget(entryId=e.id)).testTag("quick-entry-${e.id}").clickable{if(quickState?.sourceClickAllowed()!=false)onClick()}.padding(vertical=10.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
+    val event=LocalInlineSave.current
+    val highlight=event.takeIf{(event?.target as? SaveTarget.NewEntry)?.id==e.id}
+    Row(Modifier.fillMaxWidth().saveHighlight(highlight).ledgerQuickActions(QuickTarget(entryId=e.id)).testTag("quick-entry-${e.id}").clickable{if(quickState?.sourceClickAllowed()!=false)onClick()}.padding(vertical=8.dp),verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
         TileIcon(icon,tint)
         Column(Modifier.weight(1f),verticalArrangement=Arrangement.spacedBy(4.dp)) {
             Text(entryTitle(e,s),fontSize=14.sp,fontWeight=FontWeight.Medium,color=if(e.voided) Muted else Ink,maxLines=1)

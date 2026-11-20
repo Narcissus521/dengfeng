@@ -68,10 +68,10 @@ class GlassAndTutorialTest:TeaUiScenario() {
         ui.onNodeWithTag("dock-首页").assertDoesNotExist()
         ui.mainClock.autoAdvance=false
         try {
-            ui.onNodeWithText("‹ 返回").performClick();ui.mainClock.advanceTimeBy(192);ui.waitForIdle()
+            ui.onNodeWithText("‹ 返回").performClick();ui.mainClock.advanceTimeBy(144);ui.waitForIdle()
             ui.runOnIdle {assertEquals(CardPhase.CLOSING,ui.activity.activeCardMotion!!.phase);assertEquals(OverviewCard.HOME_PURCHASE,ui.activity.activeCardMotion!!.origin!!.key)}
             shot("glass-return-mid")
-            ui.mainClock.advanceTimeBy(138);ui.waitForIdle()
+            ui.mainClock.advanceTimeBy(112);ui.waitForIdle()
             ui.runOnIdle {assertEquals(CardPhase.CLOSING,ui.activity.activeCardMotion!!.phase)}
             val nearEnd=ui.onRoot().captureToImage().toPixelMap()
             ui.mainClock.advanceTimeBy(70);ui.waitForIdle()

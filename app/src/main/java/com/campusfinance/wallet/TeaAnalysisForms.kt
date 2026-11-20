@@ -96,10 +96,10 @@ private data class BookResult(val revision:Long,val query:RecordQuery,val rows:L
             }
             if(entries.isNotEmpty())TeaCard(padding=12.dp,spacing=0.dp){
                 entries.drop(current*15).take(15).forEachIndexed{i,e->
-                    Column(Modifier.fillMaxWidth().testTag("record-${e.id}").clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("detail",e.id))}){
+                    key(e.id) { Column(Modifier.fillMaxWidth().listArrival(i).testTag("record-${e.id}").clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("detail",e.id))}){
                         EntryRow(e,s){open(Editor("detail",e.id))}
                         if(e.note.isNotBlank())Text(e.note,Modifier.fillMaxWidth().padding(bottom=8.dp),fontSize=11.sp,lineHeight=17.sp,color=Muted,maxLines=1,overflow=TextOverflow.Ellipsis)
-                    }
+                    } }
                     if(i<minOf(15,entries.size-current*15)-1)HorizontalDivider(color=MaterialEdge)
                 }
             }

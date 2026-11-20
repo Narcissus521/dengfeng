@@ -34,8 +34,7 @@ internal fun HuabeiBillForm(s: Ledger, month: String, close: () -> Unit, open: (
             Caption("这个月没有花呗账单。")
         } else {
             AmountLine("账单金额", bill.amount)
-            AmountLine("已还金额", bill.paid)
-            AmountLine("剩余待还", bill.remaining, Forest)
+            HuabeiPaymentAmounts(bill, "已还金额")
             Caption("还款日 ${bill.dueDate}")
             if (bill.remaining > 0) {
                 OutlinedButton(onClick = { open(Editor("huabeiRepay", month)) }, modifier = Modifier.fillMaxWidth()) {
@@ -73,7 +72,8 @@ internal fun HuabeiRepayForm(s: Ledger, month: String?, vm: WalletViewModel, bus
         submit = {
             require(accounts.any { it.id == accountId }) { "请选择实际扣款账户" }
             val value = Money.parse(amount)
-            if (bill != null) vm.execute({ payHuabei(bill, accountId, date, value) }, close)
+            if (bill != null) vm.execute({ payHuabei(bill, accountId, date, value) },
+                SaveTarget.Huabei(bill.month, bill.paid), close)
         }) {
         if (bill == null) {
             Caption("这期账单已经结清或已移除。")
@@ -87,6 +87,16 @@ internal fun HuabeiRepayForm(s: Ledger, month: String?, vm: WalletViewModel, bus
             Caption("按本次金额扣减所选账户余额，剩余金额继续待还。消费已记在购买当天。")
         }
     }
+}
+
+@Composable
+internal fun HuabeiPaymentAmounts(bill: HuabeiBill, paidLabel: String, divided: Boolean = false) {
+    val event = LocalInlineSave.current
+    val target = event?.target as? SaveTarget.Huabei
+    val highlight = event.takeIf { target?.month == bill.month && target.previousPaid != bill.paid }
+    AmountLine(paidLabel, bill.paid, amountModifier = Modifier.saveHighlight(highlight))
+    if (divided) androidx.compose.material3.HorizontalDivider(color = MaterialEdge)
+    AmountLine("剩余待还", bill.remaining, Forest, amountModifier = Modifier.saveHighlight(highlight))
 }
 
 @Composable

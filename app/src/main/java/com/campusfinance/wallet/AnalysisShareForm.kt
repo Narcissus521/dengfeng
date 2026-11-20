@@ -63,7 +63,7 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
         }
     }) {
         MonthPicker(month, { month = minOf(it, currentMonth()) })
-        TeaCard(padding = 16.dp, spacing = 8.dp) {
+        TeaCard(Modifier.listArrival(0), padding = 16.dp, spacing = 8.dp) {
             Text("同期净消费", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink)
             HorizontalDivider(color = MaterialEdge)
             AmountLine("${overview.month.monthValue} 月 1–${overview.days} 日", overview.current, Forest)
@@ -72,7 +72,12 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
             HorizontalDivider(color = MaterialEdge)
             Text(overview.changeLabel, fontSize = 13.sp, color = if (overview.delta > 0) Red else Ink)
         }
-        TeaCard(padding = 16.dp, spacing = 8.dp) {
+        val exceeded = overview.budgets.filter { it.remaining < 0 }.sortedBy { it.remaining }
+        exceeded.firstOrNull()?.let { budget ->
+            val remainingCategories = if (exceeded.size > 1) "，另有 ${exceeded.size-1} 类超支" else ""
+            Notice("${budget.name}超出 ¥${Money.format(-budget.remaining)}$remainingCategories", warning = true)
+        }
+        TeaCard(Modifier.listArrival(1), padding = 16.dp, spacing = 8.dp) {
             Text("分类预算", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink)
             if (overview.budgets.isEmpty()) Caption("所选月份未设置分类预算。")
             else {
@@ -81,8 +86,10 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
                     if (index > 0) HorizontalDivider(color = MaterialEdge)
                     val remaining = if (budget.remaining < 0) "超出 ¥${Money.format(-budget.remaining)}"
                         else "¥${Money.format(budget.remaining)}"
-                    BudgetTableRow(budget.name, "${Money.format(budget.spent)} / ${Money.format(budget.planned)}",
-                        remaining, overBudget = budget.remaining < 0)
+                    key(budget.name) {
+                        BudgetTableRow(budget.name, "${Money.format(budget.spent)} / ${Money.format(budget.planned)}",
+                            remaining, modifier = Modifier.listArrival(index+2), overBudget = budget.remaining < 0)
+                    }
                 }
             }
         }
@@ -105,9 +112,9 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
 }
 
 @Composable
-private fun BudgetTableRow(category: String, usage: String, remaining: String, header: Boolean = false, overBudget: Boolean = false) {
+private fun BudgetTableRow(category: String, usage: String, remaining: String, modifier: Modifier = Modifier, header: Boolean = false, overBudget: Boolean = false) {
     val background = if (header) Modifier.background(Pale, RoundedCornerShape(5.dp)) else Modifier
-    Row(Modifier.fillMaxWidth().then(background).padding(horizontal = 6.dp, vertical = 6.dp),
+    Row(modifier.fillMaxWidth().then(background).padding(horizontal = 6.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         Text(category, Modifier.weight(1f), fontSize = 13.sp, color = if (header) Muted else Ink)
         Text(usage, Modifier.weight(1.4f), fontSize = 13.sp, textAlign = TextAlign.End, color = if (header) Muted else Ink)

@@ -107,7 +107,7 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
             Row(horizontalArrangement=Arrangement.spacedBy(15.dp)) { TileIcon("plan");Column { Text("给未来留一份计划",fontWeight=FontWeight.Medium);Caption("预算、负债与储蓄目标，一起查看。") } }
             Row(horizontalArrangement=Arrangement.spacedBy(15.dp)) { TileIcon("bag");Column { Text("想买之前，先看影响",fontWeight=FontWeight.Medium);Caption("现金和预算分别模拟，消费更从容。") } }
         }
-        Button(onClick={onChoose(false)},modifier=Modifier.fillMaxWidth().height(56.dp),shape=RoundedCornerShape(17.dp)) { Text("创建我的账本",fontSize=16.sp) }
+        PhysicalButton(onClick={onChoose(false)},modifier=Modifier.fillMaxWidth().height(56.dp),radius=17.dp,shape=RoundedCornerShape(17.dp)) { Text("创建我的账本",fontSize=16.sp) }
         Caption("无需注册 · 数据保存在本机 · 人民币 / 北京时间\n暖纸酒红 · 支持固定收支、记账提醒和购买模拟。分期金额由你填写，不自动推算利息。")
     }
 }
@@ -146,9 +146,24 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
     var pendingRestore by remember { mutableStateOf<Ledger?>(null) }
     val scope = rememberCoroutineScope()
     val saveFeedback=remember{SnackbarHostState()}
-    LaunchedEffect(vm){vm.confirmations.collect {
+    var inlineSave by remember { mutableStateOf<SaveConfirmation?>(null) }
+    LaunchedEffect(inlineSave) {
+        if(inlineSave!=null) {
+            kotlinx.coroutines.delay(1800)
+            inlineSave=null
+        }
+    }
+    LaunchedEffect(vm){vm.confirmations.collect { event ->
         saveFeedback.currentSnackbarData?.dismiss()
-        scope.launch{saveFeedback.showSnackbar("保存成功",duration=SnackbarDuration.Short)}
+        inlineSave=event.takeIf{it.target!=null}
+        val closing=cardMotion.phase==CardPhase.CLOSING
+        val inlineVisible=when(val target=event.target){
+            is SaveTarget.NewEntry -> (closing&&tab==0&&target.month==currentMonth()) ||
+                editor?.type in listOf("recordBook","monthBook","categoryRecords")
+            is SaveTarget.Huabei -> !closing&&editor?.type in listOf("huabeiBill","monthlyRepayment")
+            null -> false
+        }
+        if(!inlineVisible&&quickRoute==null)scope.launch{saveFeedback.showSnackbar("保存成功",duration=SnackbarDuration.Short)}
     }}
     val exportLauncher = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
         if(uri!=null) scope.launch {
@@ -192,7 +207,9 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
         if(editor==null||cardMotion.phase==CardPhase.CLOSING) {
             val continuing=editor!=null&&cardMotion.phase==CardPhase.CLOSING
             if(!continuing){analysisKeys.forEach{analysisState.removeState(it)};analysisKeys=arrayListOf()}
-            cardMotion.job?.cancel();editorHistory.clear();cardMotion.origin=cardMotion.takeOrigin() ?: cardMotion.leafOrigin
+            cardMotion.job?.cancel();editorHistory.clear()
+            val tappedOrigin=cardMotion.takeOrigin()
+            if(!continuing)cardMotion.origin=tappedOrigin ?: cardMotion.leafOrigin
             cardMotion.entrancePrepared=continuing;cardMotion.openingReady=continuing||editor==next;cardMotion.phase=CardPhase.OPENING
             cardMotion.job=scope.launch {
                 if(!continuing)cardMotion.progress.snapTo(0f)
@@ -200,7 +217,7 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
                 // Start the growth clock after the new form has completed its first layout.
                 snapshotFlow{cardMotion.openingReady}.first{it}
                 withFrameNanos{}
-                cardMotion.progress.animateTo(1f,tween(motion.duration(360),easing=NavigationEasing));cardMotion.phase=CardPhase.OPEN
+                cardMotion.progress.animateTo(1f,tween(motion.duration(if(cardMotion.shared)300 else 360),easing=NavigationEasing));cardMotion.phase=CardPhase.OPEN
             }
         } else if(editor!=next){keyboard?.hide();editorHistory.add(editor!!);editorDirection=1}
         editor=next
@@ -210,10 +227,9 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
             if(editorHistory.isNotEmpty()){keyboard?.hide();editorDirection=-1;editor=editorHistory.removeAt(editorHistory.lastIndex)}
             else {
                 keyboard?.hide();cardMotion.job?.cancel()
-                cardMotion.origin?.key?.let {key->cardMotion.rectangles[key]?.let{cardMotion.origin=it}}
                 cardMotion.phase=CardPhase.CLOSING
                 cardMotion.job=scope.launch {
-                    cardMotion.progress.animateTo(0f,tween(motion.duration(320),easing=NavigationEasing))
+                    cardMotion.progress.animateTo(0f,tween(motion.duration(if(cardMotion.shared)280 else 320),easing=NavigationEasing))
                     editor=null;cardMotion.reset()
                 }
             }
@@ -223,7 +239,7 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
     val revealedDockAction by rememberUpdatedState<(Int)->Unit> { slot->if(slot==2)showLeaf() else navigate(if(slot<2)slot else slot-1) }
     LaunchedEffect(s.reminder){withContext(Dispatchers.IO){WalletAutomation.run(activity,notify=false)}}
     val overviewState=rememberSaveableStateHolder()
-    CompositionLocalProvider(LocalCardMotion provides cardMotion,LocalEmbeddedForm provides true,LocalPageMotion provides pageMotion,LocalLedgerQuickState provides quickState,LocalQuickEditor provides showQuick) {
+    CompositionLocalProvider(LocalCardMotion provides cardMotion,LocalEmbeddedForm provides true,LocalPageMotion provides pageMotion,LocalLedgerQuickState provides quickState,LocalQuickEditor provides showQuick,LocalInlineSave provides inlineSave) {
       Box(Modifier.fillMaxSize().pointerInput(cardMotion) {
           awaitEachGesture {
               val down=awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial)
@@ -262,7 +278,7 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
       }.background(Color.Black))
       Box(Modifier.fillMaxSize().systemBarsPadding().then(if(android.os.Build.VERSION.SDK_INT>=30)Modifier.imePadding() else Modifier)
           .onGloballyPositioned{cardMotion.bodyOffset=it.positionInRoot();cardMotion.destinationBounds=it.boundsInRoot()}) {
-        editor?.let { current -> CardEditorLayer(cardMotion,current) {
+        editor?.let { current -> CardEditorLayer(cardMotion) {
           AnimatedContent(targetState=current,modifier=Modifier.fillMaxSize().clipToBounds().testTag("full-screen-destination"),label="destination navigation",transitionSpec={
               val duration=motion.duration(360);val direction=editorDirection
               (slideInHorizontally(tween(duration,easing=NavigationEasing)){if(direction>0)it else -it/4} togetherWith
@@ -285,7 +301,7 @@ data class Editor(val type: String, val id: String? = null, val kind: String? = 
           }
         }}
       }
-      SnackbarHost(saveFeedback,Modifier.align(Alignment.TopEnd).statusBarsPadding().padding(top=6.dp,end=18.dp)) { feedback ->
+      SnackbarHost(saveFeedback,Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(bottom=68.dp,end=18.dp)) { feedback ->
           Box(Modifier.testTag("save-confirmation").semantics{liveRegion=LiveRegionMode.Polite}
               .teaGlass(Card).clickable{feedback.dismiss()}.padding(horizontal=14.dp,vertical=9.dp)) {
               Text("✓ ${feedback.visuals.message}",fontSize=12.sp,lineHeight=18.sp,color=Ink)

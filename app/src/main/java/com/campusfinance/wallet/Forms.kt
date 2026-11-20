@@ -181,7 +181,7 @@ import java.time.format.DateTimeFormatter
                 fontWeight=FontWeight.Medium,modifier=Modifier.testTag("account-current-balance"))
             TeaSmall("已按记账记录更新，表示这个账户现在剩余的金额。")
         }
-        Button(onClick={open(Editor("calibrate",id))},enabled=!busy&&a.disabledOn==null,modifier=Modifier.fillMaxWidth().testTag("account-calibrate")) { Text("手动校准余额") }
+        PhysicalButton(onClick={open(Editor("calibrate",id))},enabled=!busy&&a.disabledOn==null,modifier=Modifier.fillMaxWidth().testTag("account-calibrate")) { Text("手动校准余额") }
         TeaLink("账户设置","修改账户名称、开始余额与开始记账日期"){open(Editor("accountSettings",id))}
         val plans=s.recurringRules.filter{r->r.kind=="INCOME"&&s.recurringAllocations.any{it.ruleId==r.id&&it.accountId==id}}
         TeaLink("固定收入",if(plans.isEmpty())"尚未设置" else "${plans.size} 项收入计划"){open(Editor("incomePlan",id))}
@@ -255,7 +255,8 @@ import java.time.format.DateTimeFormatter
             if(kind=="TRANSFER") targetId else null,if(kind=="REFUND") origin?.id else null,old?.installmentId,note,false,old?.transferId,old?.incomePlanId,old?.incomePlanMonth,old?.repaymentId,old?.recurringOccurrenceId,
             if(kind=="EXPENSE")categoryGroup else "",if(kind=="EXPENSE")subcategory else "",if(kind=="EXPENSE")necessity else Necessity.UNDECIDED.name)
         val charge=if(kind=="TRANSFER"&&old==null)Money.parse(fee) else 0L
-        vm.execute({entry(e,reason,charge,huabeiDay)}) {
+        val target=if(old==null)SaveTarget.NewEntry(e.id,e.date.take(7)) else null
+        vm.execute({entry(e,reason,charge,huabeiDay)},target) {
             accountMemory.rememberSaved(s.profile.demo,e,old==null)
             close()
         }
@@ -354,7 +355,7 @@ import java.time.format.DateTimeFormatter
                     else -> "撤销后会恢复相应余额并保留历史。转账的独立手续费保持有效。"
                 },true)
                 Field("撤销原因",reason,{reason=it})
-                Button(onClick={vm.execute({voidEntry(e.id,reason)},close)},enabled=!busy&&reason.isNotBlank(),colors=ButtonDefaults.buttonColors(containerColor=Red,contentColor=MaterialTheme.colorScheme.onError)){Text("确认撤销")}
+                PhysicalButton(onClick={vm.execute({voidEntry(e.id,reason)},close)},enabled=!busy&&reason.isNotBlank(),colors=ButtonDefaults.buttonColors(containerColor=Red,contentColor=MaterialTheme.colorScheme.onError)){Text("确认撤销")}
             }
         }
         val audits=s.audits.filter{it.entityId==e.id}
