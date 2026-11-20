@@ -2,16 +2,24 @@ package com.campusfinance.wallet
 
 import android.content.ActivityNotFoundException
 import android.content.Intent
+import androidx.compose.foundation.background
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -35,7 +43,7 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
     val report = remember(s.profile.revision, month, details, plans, today) {
         s.analysisShare(YearMonth.parse(month), details, plans, today)
     }
-    Form("分享到 ChatGPT 分析", close = close, confirm = "选择分享应用", submit = {
+    Form("消费分析资料", close = close, confirm = "分享分析资料", submit = {
         val folder = File(context.cacheDir, "analysis-share").apply { mkdirs() }
         val file = File(folder, "dengfeng-analysis-${newId()}.txt").apply { writeText(report, Charsets.UTF_8) }
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.analysis-share", file)
@@ -55,19 +63,27 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
         }
     }) {
         MonthPicker(month, { month = minOf(it, currentMonth()) })
-        TeaCard {
-            Text("同期净消费")
-            AmountLine("${overview.month} 1–${overview.days} 日", overview.current)
-            AmountLine("${overview.previousMonth} 1–${overview.days} 日", overview.previous)
-            Caption(overview.changeLabel)
+        TeaCard(padding = 16.dp, spacing = 8.dp) {
+            Text("同期净消费", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink)
+            HorizontalDivider(color = MaterialEdge)
+            AmountLine("${overview.month.monthValue} 月 1–${overview.days} 日", overview.current, Forest)
+            HorizontalDivider(color = MaterialEdge)
+            AmountLine("${overview.previousMonth.monthValue} 月 1–${overview.days} 日", overview.previous, Forest)
+            HorizontalDivider(color = MaterialEdge)
+            Text(overview.changeLabel, fontSize = 13.sp, color = if (overview.delta > 0) Red else Ink)
         }
-        TeaCard {
-            Text("分类预算")
+        TeaCard(padding = 16.dp, spacing = 8.dp) {
+            Text("分类预算", fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = Ink)
             if (overview.budgets.isEmpty()) Caption("所选月份未设置分类预算。")
-            overview.budgets.forEach { budget ->
-                Caption("${budget.name} · 已用 ¥${Money.format(budget.spent)} / 预算 ¥${Money.format(budget.planned)}")
-                if (budget.remaining < 0) AmountLine("超出", -budget.remaining, Red)
-                else AmountLine("剩余", budget.remaining)
+            else {
+                BudgetTableRow("分类", "已用 / 预算", "剩余", header = true)
+                overview.budgets.forEachIndexed { index, budget ->
+                    if (index > 0) HorizontalDivider(color = MaterialEdge)
+                    val remaining = if (budget.remaining < 0) "超出 ¥${Money.format(-budget.remaining)}"
+                        else "¥${Money.format(budget.remaining)}"
+                    BudgetTableRow(budget.name, "${Money.format(budget.spent)} / ${Money.format(budget.planned)}",
+                        remaining, overBudget = budget.remaining < 0)
+                }
             }
         }
         Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(details, role = Role.Checkbox, onValueChange = { details = it }),
@@ -85,5 +101,17 @@ internal fun AnalysisShareForm(s: Ledger, close: () -> Unit) {
             report.take(12000).chunked(400).forEach { Text(it) }
             if (report.length > 12000) Caption("预览显示前 12000 字，分享文件包含所选资料全文。")
         }
+    }
+}
+
+@Composable
+private fun BudgetTableRow(category: String, usage: String, remaining: String, header: Boolean = false, overBudget: Boolean = false) {
+    val background = if (header) Modifier.background(Pale, RoundedCornerShape(5.dp)) else Modifier
+    Row(Modifier.fillMaxWidth().then(background).padding(horizontal = 6.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(category, Modifier.weight(1f), fontSize = 13.sp, color = if (header) Muted else Ink)
+        Text(usage, Modifier.weight(1.4f), fontSize = 13.sp, textAlign = TextAlign.End, color = if (header) Muted else Ink)
+        Text(remaining, Modifier.weight(1.15f), fontSize = 13.sp, textAlign = TextAlign.End,
+            color = if (header) Muted else if (overBudget) Red else Ink)
     }
 }
