@@ -48,7 +48,8 @@ data class Entry(@PrimaryKey val id: String = newId(), val kind: String, val amo
     @ColumnInfo(defaultValue = "''") val categoryGroupId:String="",
     @ColumnInfo(defaultValue = "''") val subcategoryId:String="",
     @ColumnInfo(defaultValue = "'UNDECIDED'") val necessity:String=Necessity.UNDECIDED.name,
-    @ColumnInfo(defaultValue = "0") val repaymentConsumption:Boolean=false)
+    @ColumnInfo(defaultValue = "0") val repaymentConsumption:Boolean=false,
+    val huabeiDueDate: String? = null)
 fun Entry.isConsumptionExpense()=kind==Kind.EXPENSE.name||kind==Kind.REPAYMENT.name&&repaymentConsumption
 fun Entry.isConsumptionRecord()=isConsumptionExpense()||kind==Kind.REFUND.name
 fun Entry.withDebtConsumption(debt:Debt)=copy(repaymentConsumption=debt.repaymentsAreConsumption,
@@ -122,7 +123,7 @@ data class Ledger(
     val categoryBudgets:List<CategoryBudget> = emptyList()
 ) {
     val activeEntries get() = entries.filterNot { it.voided }
-    fun accountName(id: String?) = accounts.find { it.id == id }?.name ?: "未知账户"
+    fun accountName(id: String?) = if (id == HUABEI_ACCOUNT) "花呗" else accounts.find { it.id == id }?.name ?: "未知账户"
     fun balance(id: String, cutoff: String = today().toString()): Long {
         val a = accounts.first { it.id == id }
         if (cutoff < a.start) return 0
@@ -167,6 +168,7 @@ object Rules {
         require(s.debtCategories.map { it.name.lowercase(Locale.ROOT) }.distinct().size == s.debtCategories.size) { "这个欠款种类已存在，请换一个名称" }
         require(s.budgets.map { it.month }.distinct().size == s.budgets.size) { "月份预算重复" }
         s.accounts.forEach { a ->
+            require(a.id != HUABEI_ACCOUNT) { "花呗账户不能作为现金账户保存" }
             require(a.name.isNotBlank() && a.name.length <= 30) { "账户名称须为 1–30 个字" }
             require(a.opening in -MAX_MONEY..MAX_MONEY) { "开始余额超出范围" }
             require(!date(a.start).isAfter(now)) { "开始记账日不能在未来" }
@@ -235,17 +237,33 @@ object Rules {
             if (kind == Kind.ADJUSTMENT) require(e.amount != 0L && e.amount in -MAX_MONEY..MAX_MONEY) { "调整差额须为非零金额" }
             else amount(e.amount, true)
             require(!date(e.date).isAfter(now)) { "真实交易不能使用未来日期" }
-            val account = s.accounts.find { it.id == e.accountId } ?: error("账户不存在")
-            require(e.date >= account.start) { "交易早于开始记账日，请先核对并向前扩展开始余额" }
-            if (kind == Kind.TRANSFER) {
+            val huabeiPurchase = kind == Kind.EXPENSE && e.accountId == HUABEI_ACCOUNT
+            require((e.huabeiDueDate != null) == (huabeiPurchase || e.isHuabeiPayment)) { "花呗账单还款日无效" }
+            e.huabeiDueDate?.let { due ->
+                val month = YearMonth.from(date(due))
+                if (huabeiPurchase) {
+                    require(month == YearMonth.from(date(e.date)).plusMonths(1)) { "花呗消费须归入次月账单" }
+                    require(e.recurringOccurrenceId == null && e.transferId == null) { "请在支出中单独登记花呗消费" }
+                }
+            }
+            if (e.accountId == HUABEI_ACCOUNT) {
+                require(huabeiPurchase || kind == Kind.REFUND) { "花呗用于记录消费和退回花呗的退款" }
+            } else {
+                val account = s.accounts.find { it.id == e.accountId } ?: error("账户不存在")
+                require(e.date >= account.start) { "交易早于开始记账日，请先核对并向前扩展开始余额" }
+            }
+            if (kind == Kind.TRANSFER && !e.isHuabeiPayment) {
                 val target = s.accounts.find { it.id == e.toAccountId } ?: error("请选择转入账户")
-                require(target.id != account.id) { "不能向同一个账户转账" }
+                require(target.id != e.accountId) { "不能向同一个账户转账" }
                 require(e.date >= target.start) { "交易早于转入开始记账日" }
             }
             if (kind == Kind.REFUND) {
                 val original = s.entries.find { it.id == e.originalId } ?: error("退款必须关联原消费")
                 require(original.kind == Kind.EXPENSE.name) { "仅支持日常消费退款" }
-                if (!e.voided) require(!original.voided) { "有有效退款时不能撤销原消费" }
+                if (!e.voided) {
+                    require(e.accountId != HUABEI_ACCOUNT || original.accountId == HUABEI_ACCOUNT) { "仅花呗消费可以退回花呗" }
+                    require(!original.voided) { "有有效退款时不能撤销原消费" }
+                }
                 require(e.date >= original.date) { "退款不能早于原消费" }
             }
             if (kind == Kind.REPAYMENT) {
@@ -280,11 +298,12 @@ object Rules {
         }
         s.categoryBudgets.groupBy{it.month}.forEach{(month,caps)->require(caps.map{it.amount}.exactSum()<=s.budget(month)!!.total){"分类预算合计不能超过月度总预算，请先调整分类额度"}}
         validateRecurring(s, now)
+        s.validateHuabei()
         s.cash() // Verify aggregate overflow before committing.
     }
     fun checkEnabled(s: Ledger, e: Entry) {
         if (e.kind == Kind.REFUND.name) return
-        listOfNotNull(e.accountId, e.toAccountId).forEach { id ->
+        listOfNotNull(e.accountId, e.toAccountId).filterNot { it == HUABEI_ACCOUNT }.forEach { id ->
             val a = s.accounts.first { it.id == id }
             require(a.disabledOn == null || e.date < a.disabledOn) { "账户已停用，请先启用；仅可补录停用日前的真实交易" }
         }

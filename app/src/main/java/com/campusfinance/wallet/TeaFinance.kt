@@ -67,7 +67,7 @@ fun Ledger.review(p: PurchaseInput, now: LocalDate = today()): PurchaseReview {
     val bucketLeft=budget?.amountFor(p.bucket)?.let { it-bucketUsed-p.price }
     val cashAfter=cash()-p.price;val accountAfter=balance(p.accountId)-p.price
     val savings=goals.filterNot { it.archived }.map { it.saved }.exactSum()
-    val pending=unpaid().filter { LocalDate.parse(it.date)<=now.plusDays(30) }.map { it.due }.exactSum()
+    val pending=pendingRepayments().filter { LocalDate.parse(it.date)<=now.plusDays(30) }.map { it.due }.exactSum()
     val installmentMonthSpend=if(p.amounts.isEmpty())p.price else p.down+p.amounts.mapIndexed{index,value->if(YearMonth.from(first.plusMonths(index.toLong()))==YearMonth.from(now))value else 0L}.exactSum()
     val installmentLeft=budget?.let{it.total-used-installmentMonthSpend}
     val installmentPart=budget?.amountFor(p.bucket)?.let{it-bucketUsed-installmentMonthSpend}

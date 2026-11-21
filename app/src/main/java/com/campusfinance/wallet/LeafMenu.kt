@@ -7,6 +7,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -41,13 +42,16 @@ import androidx.compose.ui.unit.sp
                             Text("记录与设置",Modifier.weight(1f),fontSize=17.sp,fontWeight=FontWeight.Medium)
                             TextButton(onClick=close,modifier=Modifier.testTag("leaf-close")){Text("关闭",fontSize=12.sp)}
                         }
-                        listOf(listOf("EXPENSE","INCOME"),listOf("RECORDS","SETTINGS")).forEach { row ->
+                        listOf(listOf("EXPENSE","INCOME"),listOf("RECORDS","SETTINGS")).forEachIndexed { rowIndex,row ->
                             Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                                row.forEach { kind ->
+                                row.forEachIndexed { columnIndex,kind ->
                                     val title=when(kind){"EXPENSE"->"支出";"INCOME"->"收入";"RECORDS"->"记账记录";else->"设置"}
                                     val icon=when(kind){"EXPENSE"->"expense";"INCOME"->"income";"RECORDS"->"book";else->"settings"}
-                                    Row(Modifier.weight(1f).teaGlass(if(kind=="EXPENSE")Lime else Card,radius=19f)
-                                        .clickable {choose(when(kind){"SETTINGS"->Editor("profile");"RECORDS"->Editor("recordBook");else->Editor("transaction",kind=kind)})}
+                                    val interactions=remember{MutableInteractionSource()}
+                                    val pressed by interactions.collectIsPressedAsState()
+                                    Row(Modifier.weight(1f).listArrival(rowIndex*2+columnIndex).physicalPress(pressed,19.dp)
+                                        .teaGlass(if(kind=="EXPENSE")Lime else Card,radius=19f)
+                                        .clickable(interactionSource=interactions,indication=null) {choose(when(kind){"SETTINGS"->Editor("profile");"RECORDS"->Editor("recordBook");else->Editor("transaction",kind=kind)})}
                                         .padding(horizontal=16.dp,vertical=20.dp).testTag("leaf-$kind"),
                                         verticalAlignment=Alignment.CenterVertically,horizontalArrangement=Arrangement.spacedBy(12.dp)) {
                                         Glyph(icon,Forest,Modifier.size(23.dp));Text(title,fontSize=16.sp)

@@ -10,6 +10,7 @@ import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
@@ -65,10 +66,10 @@ val LocalTeaCompact = staticCompositionLocalOf { false }
     var bounds by remember {mutableStateOf(Rect.Zero)}
     CompositionLocalProvider(LocalDensity provides Density(density.density*percent/100f,density.fontScale)) {
         val radius=with(LocalDensity.current){8.dp.toPx()}
-        val click:()->Unit={if(quickState?.sourceClickAllowed()!=false){if(editing!=null&&card!=null)request?.invoke(card) else {motion?.capture(bounds,card,radius);onClick?.invoke()}}}
+        val click:()->Unit={if(quickState?.sourceClickAllowed()!=false){if(editing!=null&&card!=null)request?.invoke(card) else {motion?.capture(bounds,card,radius,tint);onClick?.invoke()}}}
         Column(modifier.fillMaxWidth().then(if(card!=null)Modifier.layoutId(card.pageKey).testTag("card-${card.name}") else Modifier)
-            .onGloballyPositioned {bounds=it.boundsInRoot();if(card!=null)motion?.rectangles?.set(card,CardOrigin(bounds,card,radius))}
-            .pointerInput(card){awaitEachGesture{awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial);motion?.capture(bounds,card,radius)}}
+            .onGloballyPositioned {bounds=it.boundsInRoot()}
+            .pointerInput(card,tint){awaitEachGesture{awaitFirstDown(requireUnconsumed=false,pass=PointerEventPass.Initial);motion?.capture(bounds,card,radius,tint)}}
             .ledgerMaterial(tint,8f,fold=card==OverviewCard.HOME_BUDGET)
             .then(if(card!=null&&editing==card)Modifier.border(1.5.dp,Forest,shape) else Modifier)
             .then(if(card!=null&&editing!=null&&request!=null&&gridDrag!=null)Modifier.gridCardDrag(card,gridDrag)
@@ -119,9 +120,15 @@ val LocalTeaCompact = staticCompositionLocalOf { false }
                 }
                 key(title) { AutoPages(Modifier.weight(1f).padding(horizontal=18.dp,vertical=10.dp),content) }
                 error?.let { Text(it,Modifier.fillMaxWidth().padding(horizontal=20.dp,vertical=6.dp),fontSize=12.sp,color=Red) }
-                if(confirm!=null)Button(onClick={try{error=null;submit()}catch(e:Exception){error=e.message ?: "请检查输入"}},enabled=!busy,
-                    modifier=Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=8.dp).height(49.dp).ledgerMaterial(Forest,8f,button=true).testTag("form-submit"),shape=RoundedCornerShape(8.dp),colors=ButtonDefaults.buttonColors(containerColor=androidx.compose.ui.graphics.Color.Transparent,contentColor=MaterialTheme.colorScheme.onPrimary)) {
-                    Text(if(busy)"正在保存…" else confirm)
+                if(confirm!=null)Box(Modifier.fillMaxWidth().padding(horizontal=18.dp,vertical=8.dp)) {
+                    val interactions=remember{MutableInteractionSource()}
+                    val pressed by interactions.collectIsPressedAsState()
+                    Button(onClick={try{error=null;submit()}catch(e:Exception){error=e.message ?: "请检查输入"}},enabled=!busy,
+                        modifier=Modifier.fillMaxWidth().height(49.dp).physicalPress(pressed,8.dp)
+                            .ledgerMaterial(Forest,8f,button=true,pressed=pressed).testTag("form-submit"),
+                        interactionSource=interactions,shape=RoundedCornerShape(8.dp),colors=ButtonDefaults.buttonColors(containerColor=androidx.compose.ui.graphics.Color.Transparent,contentColor=MaterialTheme.colorScheme.onPrimary)) {
+                        Text(if(busy)"正在保存…" else confirm)
+                    }
                 }
                 if(!embedded&&dock!=null)dock()
             }

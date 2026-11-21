@@ -25,7 +25,7 @@ import java.time.YearMonth
 
 @Composable fun OverviewScreen(s: Ledger, month: String, open:(Editor)->Unit, ledger:()->Unit, plan:(Int)->Unit) {
     val b=s.budget(month);val used=s.usage(month)
-    val due=s.unpaid().filter{it.date.startsWith(month)}
+    val due=s.pendingRepayments().filter{it.date.startsWith(month)}
     LazyColumn(Modifier.fillMaxSize(),contentPadding=PaddingValues(start=22.dp,end=22.dp,bottom=24.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
         item {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp)).background(LocalWalletColors.current.hero)) {
@@ -196,12 +196,13 @@ import java.time.YearMonth
             else -> {
                 item { Headline("我的负债","添加负债"){open(Editor("debt"))} }
                 item { CardBox {
-                    AmountLine("全部剩余待还",s.unpaid().map{it.due}.exactSum(),Forest)
+                    AmountLine("全部剩余待还",s.pendingRepayments().map{it.due}.exactSum(),Forest)
                     TextButton(onClick={open(Editor("debtCategories"))}){Text("管理欠款种类")}
                     val options=listOf(DebtCategory("*","全部种类"),DebtCategory("","未分类"))+s.debtCategories
                     Select("按欠款种类查看",options,options.find{it.id==categoryFilter},{it.name}){categoryFilter=it.id}
                 } }
                 item { Notice("支持每期相同或逐期设置金额。付款后可用一个或多个账户组合登记，计划本身不会自动扣款。") }
+                if(categoryFilter=="*")items(s.huabeiBills(),key={"huabei:${it.month}"}){HuabeiBillLink(it,open)}
                 val debts=s.debts.filter{categoryFilter=="*"||(it.categoryId ?: "")==categoryFilter}
                 if(debts.isEmpty()) item { EmptyState("还没有这类负债","添加欠款种类、金额、总期数和首期日期，即可安排还款。","新建负债"){open(Editor("debt"))} }
                 items(debts,key={it.id}) { d ->
@@ -223,7 +224,7 @@ import java.time.YearMonth
     val entries=s.activeEntries.filter{it.date.startsWith(month)}
     val expense=entries.filter{it.isConsumptionExpense()}.map{it.amount}.exactSum()
     val refunds=entries.filter{it.kind=="REFUND"}.map{it.amount}.exactSum()
-    val repayments=entries.filter{it.kind=="REPAYMENT"}.map{it.amount}.exactSum()
+    val repayments=entries.filter{it.kind=="REPAYMENT"||it.isHuabeiPayment}.map{it.amount}.exactSum()
     val categories=entries.filter{it.isConsumptionExpense()}.groupBy{it.category}.mapValues{(_,v)->v.map{it.amount}.exactSum()}.entries.sortedByDescending{it.value}
     val palette=if(LocalWalletColors.current.dark)
         listOf(Forest,Color(0xFF8FAAD0),Color(0xFFC9BCE1),Color(0xFF92C5D6),Color(0xFFD8B88B),Color(0xFFCDB4C3),Color(0xFFA7B4C6))
@@ -264,7 +265,9 @@ import java.time.YearMonth
             val adjustments=entries.filter{it.kind=="ADJUSTMENT"}.map{it.amount}.exactSum()
             AmountLine("余额修正差额",adjustments)
             HorizontalDivider(color=Pale)
-            AmountLine("本月现金增减",s.income(month)-expense+refunds-repayments+adjustments,Forest)
+            val creditExpense=entries.filter{it.kind=="EXPENSE"&&it.accountId==HUABEI_ACCOUNT}.map{it.amount}.exactSum()
+            val creditRefunds=entries.filter{it.kind=="REFUND"&&it.accountId==HUABEI_ACCOUNT}.map{it.amount}.exactSum()
+            AmountLine("本月现金增减",s.income(month)-(expense-creditExpense)+(refunds-creditRefunds)-repayments+adjustments,Forest)
             val ym=YearMonth.parse(month);val end=minOf(ym.atEndOfMonth(),today()).toString()
             AmountLine("本月新账户的开始余额",s.accounts.filter{it.start.startsWith(month)&&it.start<=end}.map{it.opening}.exactSum())
             AmountLine("月末现金 / 截至今天",s.cash(end))

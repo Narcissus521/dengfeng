@@ -4,6 +4,7 @@ import android.content.SharedPreferences
 
 object ExpenseAccountPolicy {
     fun choose(accounts:List<Account>,remembered:String?,date:String):String {
+        if(remembered==HUABEI_ACCOUNT)return HUABEI_ACCOUNT
         fun usable(a:Account)=a.disabledOn==null && a.start<=date
         return (accounts.firstOrNull{it.id==remembered&&usable(it)}
             ?: accounts.firstOrNull{usable(it)})?.id ?: ""

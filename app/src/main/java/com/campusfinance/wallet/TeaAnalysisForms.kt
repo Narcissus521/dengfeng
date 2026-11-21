@@ -42,11 +42,12 @@ private data class BookResult(val revision:Long,val query:RecordQuery,val rows:L
     }
     val result=loaded?.takeIf{it.query==query&&it.revision==s.profile.revision}
     val entries=result?.rows.orEmpty()
-    val selectedAccount=s.accounts.find{it.id==account}
+    val selectedAccount=if(account.isEmpty()) "全部账户" else s.accountName(account)
     val selectedCategory=ExpenseTaxonomy.groups.find{it.id==categoryGroup}
     val natureLabel=Necessity.entries.find{it.name==necessity}?.label ?: "全部性质"
     val filtering=categoryGroup.isNotEmpty()||necessity.isNotEmpty()||account.isNotEmpty()||search.isNotBlank()||showVoided
     Form(title ?: category?.let{"${it}消费记录"} ?: "本月账本",close=close,confirm=null) {
+        TeaLink("分享到 ChatGPT 分析","预览并分享近三个月消费资料"){open(Editor("analysisShare"))}
         TeaCard(tint=LocalWalletColors.current.hero,modifier=Modifier.testTag("records-summary").semantics{result?.summary?.let{contentDescription="收入 ¥${Money.format(it.income)}，支出 ¥${Money.format(it.expense)}，退款 ¥${Money.format(it.refunds)}，净消费 ¥${Money.format(it.net)}，还款 ¥${Money.format(it.repayments)}"}}) {
             if(range==null)MonthPicker(month,{month=it;group=0}) else TeaSmall("${periods.firstOrNull() ?: month} — ${periods.lastOrNull() ?: month}")
             result?.summary?.let{summary->
@@ -64,7 +65,7 @@ private data class BookResult(val revision:Long,val query:RecordQuery,val rows:L
         TeaCard(modifier=Modifier.testTag("records-filters")) {
             Field("搜索分类、账户或备注",search,{search=it;group=0})
             TextButton(onClick={filtersOpen=!filtersOpen},modifier=Modifier.fillMaxWidth().testTag("records-filter-toggle")) {
-                Text("${selectedCategory?.name ?: category ?: "全部分类"} · $natureLabel · ${selectedAccount?.name ?: "全部账户"}${if(showVoided)" · 含已撤销" else ""}",Modifier.weight(1f),fontSize=12.sp,textAlign=androidx.compose.ui.text.style.TextAlign.Start)
+                Text("${selectedCategory?.name ?: category ?: "全部分类"} · $natureLabel · $selectedAccount${if(showVoided)" · 含已撤销" else ""}",Modifier.weight(1f),fontSize=12.sp,textAlign=androidx.compose.ui.text.style.TextAlign.Start)
                 Text(if(filtersOpen)"收起 ⌃" else "筛选 ⌄",fontSize=12.sp)
             }
             if(filtersOpen) {
@@ -75,7 +76,10 @@ private data class BookResult(val revision:Long,val query:RecordQuery,val rows:L
             if(filtering)TextButton(onClick={search="";categoryGroup="";necessity="";account="";showVoided=false;group=0},modifier=Modifier.testTag("records-clear")){Text("清除筛选",fontSize=12.sp)}
         }
         if(filtersOpen)TeaCard(modifier=Modifier.testTag("records-account-filters")) {
-            Select("资金账户",listOf("")+s.accounts.map{it.id},account,{id->s.accounts.find{it.id==id}?.let{it.name+if(it.disabledOn!=null)"（已停用）" else ""} ?: "全部账户"}){account=it;group=0}
+            val creditAccount=if(s.entries.any{it.huabeiDueDate!=null}) listOf(HUABEI_ACCOUNT) else emptyList()
+            Select("资金账户",listOf("")+s.accounts.map{it.id}+creditAccount,account,{id->
+                if(id.isEmpty())"全部账户" else s.accountName(id)+if(s.accounts.any{it.id==id&&it.disabledOn!=null})"（已停用）" else ""
+            }){account=it;group=0}
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Checkbox(showVoided,{showVoided=it;group=0},Modifier.testTag("records-show-voided"));TeaSmall("显示已撤销记录（不计入金额）")}
         }
         result?.let{book->
@@ -92,10 +96,10 @@ private data class BookResult(val revision:Long,val query:RecordQuery,val rows:L
             }
             if(entries.isNotEmpty())TeaCard(padding=12.dp,spacing=0.dp){
                 entries.drop(current*15).take(15).forEachIndexed{i,e->
-                    Column(Modifier.fillMaxWidth().testTag("record-${e.id}").clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("detail",e.id))}){
+                    key(e.id) { Column(Modifier.fillMaxWidth().listArrival(i).testTag("record-${e.id}").clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("detail",e.id))}){
                         EntryRow(e,s){open(Editor("detail",e.id))}
                         if(e.note.isNotBlank())Text(e.note,Modifier.fillMaxWidth().padding(bottom=8.dp),fontSize=11.sp,lineHeight=17.sp,color=Muted,maxLines=1,overflow=TextOverflow.Ellipsis)
-                    }
+                    } }
                     if(i<minOf(15,entries.size-current*15)-1)HorizontalDivider(color=MaterialEdge)
                 }
             }
@@ -176,9 +180,10 @@ private data class BookResult(val revision:Long,val query:RecordQuery,val rows:L
     var kind by rememberSaveable{mutableStateOf("*")}
     val options=listOf(DebtCategory("*","全部种类"),DebtCategory("","未分类"))+s.debtCategories
     Form(if(removed)"已移除计划" else "负债",close=close,confirm=if(removed)null else "＋ 添加负债",submit={open(Editor("debt"))}) {
-        TeaCard(tint=LocalWalletColors.current.hero){if(removed){TeaSmall("合同与历史流水保留");Text("${s.debts.count{it.archived}} 个已移除计划",fontSize=24.sp)}else{TeaSmall("全部剩余待还");Text("¥${Money.format(s.unpaid().map{it.due}.exactSum())}",fontSize=31.sp)}}
+        TeaCard(tint=LocalWalletColors.current.hero){if(removed){TeaSmall("合同与历史流水保留");Text("${s.debts.count{it.archived}} 个已移除计划",fontSize=24.sp)}else{TeaSmall("全部剩余待还");Text("¥${Money.format(s.pendingRepayments().map{it.due}.exactSum())}",fontSize=31.sp)}}
         Select("欠款种类",options,options.find{it.id==kind},{it.name}){kind=it.id}
         TextButton(onClick={open(Editor("debtCategories"))}){Text("管理自定义欠款种类")}
+        if(!removed&&kind=="*")s.huabeiBills().forEach{HuabeiBillLink(it,open)}
         s.debts.filter{it.archived==removed&&(kind=="*"||(it.categoryId ?: "")==kind)}.forEach{d->TeaCard(modifier=Modifier.ledgerQuickActions(QuickTarget(debtId=d.id)).testTag("debt-plan-${d.id}"),onClick={open(Editor("debtDetail",d.id))}){
             Text(d.name,fontSize=17.sp);TeaSmall(s.debtCategoryName(d));AmountLine(if(removed)"原计划未还（不计当前待还）" else "剩余待还",s.installments.filter{it.debtId==d.id&&s.payments(it).isEmpty()}.map{it.due}.exactSum());TeaSmall("查看逐期金额与付款账户 ›")
         }}

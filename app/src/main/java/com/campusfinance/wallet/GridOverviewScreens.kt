@@ -67,7 +67,8 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
     var summary by rememberSaveable{mutableIntStateOf(0)}
     val purchase by rememberPurchase(s.profile.demo)
     val b=s.budget(month);val used=s.usage(month)
-    val pending=s.unpaid().filter{it.date.startsWith(month)}.sortedBy{it.date}
+    val nextMonth=YearMonth.parse(month).plusMonths(1).toString()
+    val pending=s.pendingRepayments()
     val goals=s.goals.filterNot{it.archived}
     OverviewGrid(homeCards) { card,info->
         val tall=info.detailed
@@ -115,17 +116,15 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
             }}
             OverviewCard.HOME_DEBT->GridTile(card,info,click={open(Editor("debtList"))}) {
                 val art=tall&&info.height>280.dp
-                GridColumn(info,Modifier.padding(bottom=if(art)54.dp else 0.dp)) {
-                    GridHeading(card,info);GridMoney(pending.map{it.due}.exactSum(),Modifier.fillMaxWidth(),if(info.compact)21 else 26)
-                    if(!info.compact) {
-                        if(pending.isEmpty())GridNote("本月没有待还款项")
-                        else if(tall)pending.take(if(info.height>330.dp)3 else 2).forEach { p->
-                            GridDetails(p.date.substring(5),p.due)
-                            if(info.height>320.dp)GridNote(s.debts.firstOrNull{it.id==p.debtId}?.name ?: "还款计划",lines=1)
-                        } else GridNote("最近 ${pending.first().date.substring(5)} · 共 ${pending.size} 期待还",lines=2)
+                GridColumn(info,Modifier.padding(bottom=if(art)60.dp else 0.dp)) {
+                    listOf("本月待还" to month, "下月待还" to nextMonth).forEach { (label, period) ->
+                        Row(Modifier.weight(1f).fillMaxWidth().clickable { open(Editor("monthlyRepayment",period)) },
+                            verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(4.dp)) {
+                            GridNote(label,Modifier.weight(1f),lines=1)
+                            GridMoney(pending.filter { it.date.startsWith(period) }.map { it.due }.exactSum(),Modifier.weight(1f),if(info.compact)15 else 19,align=TextAlign.End)
+                        }
                     }
                 }
-                if(tall)GridNote("还款安排 ›",Modifier.align(Alignment.BottomStart).padding(end=if(art)92.dp else 0.dp),lines=2)
                 if(art)TeaArt("pour",Modifier.align(Alignment.BottomEnd).size(88.dp,58.dp).testTag("debt-corner-tea"))
             }
             OverviewCard.HOME_SAVINGS->GridTile(card,info,Lime,click={open(Editor("goalList"))}) {GridColumn(info) {
@@ -186,7 +185,7 @@ private val homeCards=listOf(OverviewCard.HOME_SUMMARY,OverviewCard.HOME_PURCHAS
 
 @Composable fun GridTeaPlanning(s:Ledger,month:String,open:(Editor)->Unit) {
     val g=s.goals.firstOrNull{!it.archived}
-    val due=s.unpaid().filter{it.date.startsWith(month)}.sortedBy{it.date}
+    val due=s.pendingRepayments().filter{it.date.startsWith(month)}
     Column(Modifier.fillMaxSize(),verticalArrangement=Arrangement.spacedBy(6.dp)) {
         TeaTitle("资金规划","预算、还款与储蓄，一起安排。")
         OverviewGrid(listOf(OverviewCard.PLAN_SAVINGS,OverviewCard.PLAN_DEBT),Modifier.weight(1f)) {card,info->

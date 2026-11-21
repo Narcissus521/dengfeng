@@ -1,7 +1,5 @@
 package com.campusfinance.wallet
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -23,7 +21,6 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -121,18 +118,16 @@ val HeaderInk:Color @Composable get()=Color(0xFFF4F3EF)
     Row(modifier.fillMaxWidth().onSizeChanged{width=it.width}.ledgerMaterial(base,if(isDock)0f else 6f,inset=!isDock)
         .pointerInput(labels.size){detectHorizontalDragGestures(onDragStart={drag=(it.x/width*labels.size-.5f).coerceIn(0f,labels.lastIndex.toFloat())},
             onDragCancel={drag=null},onDragEnd={val slot=drag?.roundToInt()?.coerceIn(0,labels.lastIndex);drag=null;if(slot!=null)onSelectNow(slot)}){change,_->change.consume();drag=(change.position.x/width*labels.size-.5f).coerceIn(0f,labels.lastIndex.toFloat())}}
-        .testTag(if(isDock)"ledger-dock" else "tabs-${labels.joinToString("-")}").padding(if(isDock)6.dp else 2.dp),horizontalArrangement=Arrangement.spacedBy(if(isDock)4.dp else 1.dp)) {
+        .testTag(if(isDock)"ledger-dock" else "tabs-${labels.joinToString("-")}").padding(horizontal=if(isDock)6.dp else 2.dp,vertical=if(isDock)4.dp else 2.dp),horizontalArrangement=Arrangement.spacedBy(if(isDock)4.dp else 1.dp)) {
         labels.forEachIndexed{i,label->
             val interactions=remember{MutableInteractionSource()};val pressed by interactions.collectIsPressedAsState()
-            val motion=LocalDisplayState.current
-            val lift by animateFloatAsState(if(pressed)1f else 0f,tween(motion.duration(100)),label="key press")
             val compose=isDock&&i==2
             val active=i==visual
             val color=if(compose)Forest else if(active)Lime else base
             val foreground=if(compose)MaterialThemeOnPrimary else if(active)Forest else Muted
-            Column(Modifier.weight(1f).height(if(isDock)56.dp else 40.dp)
-                .graphicsLayer{translationY=lift*1.dp.toPx()}
+            Column(Modifier.weight(1f).heightIn(min=if(isDock)48.dp else 40.dp)
                 .onGloballyPositioned{if(isDock){val rect=it.boundsInRoot();cardMotion?.dockRectangles?.set(i,rect);if(i==2)cardMotion?.leafOrigin=CardOrigin(rect,null,keyRadius)}}
+                .physicalPress(pressed,6.dp)
                 .ledgerMaterial(color,6f,inset=active&&!compose,button=true,pressed=pressed)
                 .semantics{selected=if(isDock)i==selectedIndex else active}
                 .clickable(interactionSource=interactions,indication=null,role=Role.Tab){onSelectNow(i)}

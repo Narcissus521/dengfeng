@@ -1,6 +1,5 @@
 package com.campusfinance.wallet
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,15 +28,14 @@ internal val LocalQuickEditor=staticCompositionLocalOf<((Editor)->Unit)?>{null}
 @Composable internal fun LedgerHome(s:Ledger,month:String,open:(Editor)->Unit) {
     val budget=s.budget(month);val used=s.usage(month)
     val quick=LocalQuickEditor.current
-    val quickState=LocalLedgerQuickState.current
-    val goals=s.goals.filterNot{it.archived};val pending=s.unpaid().filter{it.date.startsWith(month)}
+    val goals=s.goals.filterNot{it.archived};val pending=s.pendingRepayments()
     val latest=remember(s.profile.revision,month){s.activeEntries.asReversed().filter{it.date.startsWith(month)}.sortedByDescending{it.date}.take(2)}
     val purchase by rememberPurchase(s.profile.demo)
     var summary by rememberSaveable{mutableIntStateOf(0)}
     val ym=YearMonth.parse(month)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("ledger-home-scroll"),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-        Text("${ym.year} 年 ${ym.monthValue} 月",Modifier.fillMaxWidth().padding(top=10.dp,bottom=6.dp),fontSize=14.sp,color=Muted,textAlign=TextAlign.Center)
-        TeaCard(card=OverviewCard.HOME_BUDGET,padding=16.dp,spacing=12.dp,onClick={open(Editor("budgetOverview",kind=month))}) {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).testTag("ledger-home-scroll"),verticalArrangement=Arrangement.spacedBy(7.dp)) {
+        Text("${ym.year} 年 ${ym.monthValue} 月",Modifier.fillMaxWidth().padding(vertical=6.dp),fontSize=14.sp,color=Muted,textAlign=TextAlign.Center)
+        TeaCard(card=OverviewCard.HOME_BUDGET,padding=12.dp,spacing=7.dp,onClick={open(Editor("budgetOverview",kind=month))}) {
             Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
                 Text("${ym.monthValue}月",Modifier.ledgerMaterial(Forest,2f,button=true).padding(horizontal=6.dp,vertical=7.dp),fontSize=10.sp,color=MaterialTheme.colorScheme.onPrimary)
                 Spacer(Modifier.width(10.dp));Text(if(budget==null)"本月预算" else if(used>budget.total)"本月预算超出" else "本月预算剩余",Modifier.weight(1f),fontSize=12.sp,color=Muted)
@@ -47,31 +45,41 @@ internal val LocalQuickEditor=staticCompositionLocalOf<((Editor)->Unit)?>{null}
                 Text("先安排这个月的预算",fontSize=23.sp,fontWeight=FontWeight.Medium,color=Ink)
                 TeaSmall("必要消费与非必要消费分别安排，未分配额度单独保留。")
             }else{
-                GridMoney(kotlin.math.abs(budget.total-used),Modifier.testTag("home-budget-remaining"),44,if(used>budget.total)Red else Ink,TextAlign.Center)
+                GridMoney(kotlin.math.abs(budget.total-used),Modifier.testTag("home-budget-remaining"),34,if(used>budget.total)Red else Forest)
                 Progress(used,budget.total)
                 HorizontalDivider(color=MaterialEdge)
-                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(12.dp)){
-                    Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){TeaSmall("本月已花");GridMoney(used,font=17,align=TextAlign.Center)}
-                    Column(Modifier.weight(1f),horizontalAlignment=Alignment.CenterHorizontally){TeaSmall("预算总额");GridMoney(budget.total,font=17,align=TextAlign.Center)}
+                Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(8.dp)){
+                    TeaSmall("已花 ¥${Money.format(used)}",Modifier.weight(1f),Ink)
+                    Text("总额 ¥${Money.format(budget.total)}",Modifier.weight(1f),fontSize=11.sp,color=Ink,textAlign=TextAlign.End)
                 }
             }
         }
         LedgerSection("资金安排","还款与储蓄"){open(Editor("goalList"))}
-        Row(Modifier.fillMaxWidth().ledgerMaterial(LocalWalletColors.current.hero,8f,inset=true).padding(12.dp),horizontalArrangement=Arrangement.spacedBy(12.dp)) {
-            Column(Modifier.weight(1f).ledgerQuickActions(QuickTarget(OverviewCard.HOME_DEBT)).clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("debtList"))}.padding(4.dp)){
-                TeaSmall("本月待还");GridMoney(pending.map{it.due}.exactSum(),font=24);TeaSmall("查看还款计划 ›")
+        Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.spacedBy(10.dp)) {
+            listOf("本月待还" to month, "下月待还" to ym.plusMonths(1).toString()).forEach { (label, period) ->
+                TeaCard(Modifier.weight(1f).ledgerQuickActions(QuickTarget(OverviewCard.HOME_DEBT)),
+                    padding=10.dp, spacing=4.dp, onClick={open(Editor("monthlyRepayment",period))}) {
+                    Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                        Text(label,Modifier.weight(1f),fontSize=14.sp,fontWeight=FontWeight.Medium,color=Ink)
+                        Glyph("arrow",Muted,Modifier.size(14.dp))
+                    }
+                    GridMoney(pending.filter { it.date.startsWith(period) }.map { it.due }.exactSum(),
+                        Modifier.fillMaxWidth(),font=24,color=Forest)
+                }
             }
-            Column(Modifier.weight(1f).ledgerQuickActions(QuickTarget(OverviewCard.HOME_SAVINGS)).clickable{if(quickState?.sourceClickAllowed()!=false)open(Editor("goalList"))}.padding(4.dp)){
-                TeaSmall("储蓄已存");GridMoney(goals.map{it.saved}.exactSum(),font=24);TeaSmall(if(goals.size==1)goals.first().name else "${goals.size} 个储蓄目标 ›")
-            }
+        }
+        TeaCard(card=OverviewCard.HOME_SAVINGS, padding=10.dp, onClick={open(Editor("goalList"))}) {
+            AmountLine("储蓄已存", goals.map { it.saved }.exactSum(),Forest)
         }
         LedgerSection("最近记录","全部记录"){open(Editor("recordBook",kind=month))}
         TeaCard(padding=12.dp,spacing=0.dp){
-            Row(Modifier.fillMaxWidth().padding(bottom=8.dp)){TeaSmall("收支项目",Modifier.weight(1f));TeaSmall("金额 / 元")}
-            HorizontalDivider(color=MaterialEdge)
             if(latest.isEmpty())TeaSmall("本月还没有记录，点底部记账键开始。",Modifier.padding(vertical=16.dp))
             latest.forEachIndexed{i,e->
-                Box(Modifier.ledgerQuickActions(QuickTarget(entryId=e.id)).testTag("home-record-${e.id}")){EntryRow(e,s){open(Editor("detail",e.id))}}
+                key(e.id) {
+                    Box(Modifier.listArrival(i).ledgerQuickActions(QuickTarget(entryId=e.id)).testTag("home-record-${e.id}")){
+                        EntryRow(e,s){open(Editor("detail",e.id))}
+                    }
+                }
                 if(i<latest.lastIndex)HorizontalDivider(color=MaterialEdge)
             }
         }

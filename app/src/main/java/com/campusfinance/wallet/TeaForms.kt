@@ -281,7 +281,7 @@ object PurchaseStore {
                 }
             }
             "existing"->{AmountLine("未来30天内及逾期待还",result.pendingDebt);AmountLine("储蓄已存需保留",result.savings)
-                s.unpaid().filter{LocalDate.parse(it.date)<=today().plusDays(30)}.forEach{TeaSmall("${s.debts.first{d->d.id==it.debtId}.name} · ${it.date} · ¥${Money.format(it.due)}")}
+                s.pendingRepayments().filter{LocalDate.parse(it.date)<=today().plusDays(30)}.forEach{TeaSmall("${it.name} · ${it.date} · ¥${Money.format(it.due)}")}
                 TeaSmall("还款、预算和储蓄安排分别列示，不合并成一个可花金额。")}
             else->{
                 TeaSmall("茶有适温，消费也有合适时机。")

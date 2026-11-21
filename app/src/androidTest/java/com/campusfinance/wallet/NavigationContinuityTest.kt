@@ -9,6 +9,63 @@ import org.junit.Test
 
 /** Actual navigation geometry and rendered system-bar pixels, in the isolated demo ledger. */
 class NavigationContinuityTest:TeaUiScenario() {
+    @Test fun monthlyRepaymentGrowsFromItsCardAndShrinksBack() {
+        prefs.edit().putBoolean("motion_enabled",true).commit()
+        ready()
+        find(hasText("下月待还"))
+        val source = ui.onNodeWithText("下月待还")
+        val labelBounds = source.fetchSemanticsNode().boundsInRoot
+        ui.mainClock.autoAdvance=false
+        try {
+            source.performClick()
+            ui.mainClock.advanceTimeBy(64)
+            val motion=ui.activity.activeCardMotion!!
+            val early=ui.onNodeWithTag("card-editor-layer").fetchSemanticsNode().boundsInRoot
+            shot("shared-card-early")
+            ui.runOnIdle {
+                assertTrue(motion.shared)
+                assertTrue(motion.origin!!.rect.contains(labelBounds.center))
+                assertEquals(CardPhase.OPENING,motion.phase)
+            }
+            ui.mainClock.advanceTimeBy(96)
+            val later=ui.onNodeWithTag("card-editor-layer").fetchSemanticsNode().boundsInRoot
+            shot("shared-card-middle")
+            assertTrue("Width must grow across frames: $early -> $later",later.width>early.width)
+            assertTrue("Height must grow across frames: $early -> $later",later.height>early.height)
+            ui.mainClock.advanceTimeBy(550)
+            ui.onNodeWithText("待还总额").assertIsDisplayed()
+            ui.onNodeWithText("‹ 返回").performClick()
+            ui.mainClock.advanceTimeBy(112)
+            val shrinking=ui.onNodeWithTag("card-editor-layer").fetchSemanticsNode().boundsInRoot
+            assertTrue(shrinking.height<later.height)
+            ui.mainClock.advanceTimeBy(500)
+            source.assertIsDisplayed()
+        } finally { ui.mainClock.autoAdvance=true }
+    }
+
+    @Test fun dockButtonCompressesAndReboundsOnRelease() {
+        prefs.edit().putBoolean("motion_enabled",true).commit()
+        ready()
+        val button=ui.onNodeWithTag("dock-记账")
+        val normal=button.fetchSemanticsNode().boundsInRoot.width
+        ui.mainClock.autoAdvance=false
+        try {
+            button.performTouchInput { down(center) }
+            ui.mainClock.advanceTimeBy(320)
+            val compressed=button.fetchSemanticsNode().boundsInRoot.width
+            assertEquals(normal*.96f,compressed,2f)
+            button.performTouchInput { cancel() }
+            var largest=compressed
+            repeat(20) {
+                ui.mainClock.advanceTimeByFrame()
+                largest=maxOf(largest,button.fetchSemanticsNode().boundsInRoot.width)
+            }
+            assertTrue("Button should rebound past resting size: $compressed -> $largest, resting at $normal",largest>normal)
+            ui.mainClock.advanceTimeBy(500)
+            assertEquals(normal,button.fetchSemanticsNode().boundsInRoot.width,1f)
+        } finally { ui.mainClock.autoAdvance=true }
+    }
+
     @Test fun rootDestinationMovesContinuouslyWithItsTitleFromTheFirstFrames() {
         prefs.edit().putString("theme_mode","LIGHT").putBoolean("motion_enabled",true).commit();ready()
         navigate("记账");ui.mainClock.autoAdvance=false

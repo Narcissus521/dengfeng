@@ -68,7 +68,7 @@ val LocalQuickForm=staticCompositionLocalOf{false}
                 if(debt!=null){add(LedgerQuickAction(if(debt.archived)"恢复计划" else "删除该计划",Editor(if(debt.archived)"restoreDebt" else "removeDebt",debt.id),true));add(LedgerQuickAction("查看合同与历史还款",Editor("debtDetail",debt.id)))}}
             target.entryId!=null->{val e=s.entries.firstOrNull{it.id==target.entryId}
                 if(e!=null&&!e.voided){
-                    if(e.kind!="REPAYMENT"&&e.recurringOccurrenceId==null)add(LedgerQuickAction("修改这笔记录",Editor("transaction",e.id,e.kind),true))
+                    if(e.kind!="REPAYMENT"&&!e.isHuabeiPayment&&e.recurringOccurrenceId==null)add(LedgerQuickAction("修改这笔记录",Editor("transaction",e.id,e.kind),true))
                     if(e.kind=="EXPENSE"||e.kind=="REPAYMENT")add(LedgerQuickAction("修改分类与消费性质",Editor("expenseMetadata",e.id),true))
                     add(LedgerQuickAction("查看完整详情",Editor("detail",e.id)))
                 }

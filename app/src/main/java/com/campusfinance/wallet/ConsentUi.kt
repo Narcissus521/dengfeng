@@ -28,7 +28,7 @@ internal val disclaimerParagraphs=listOf(
             TeaCard { Text("使用免责声明",fontWeight=FontWeight.Medium);disclaimerParagraphs.forEach{Text(it,fontSize=14.sp,lineHeight=23.sp,color=Ink)} }
             TeaSmall("同意后才能进入账本。此页面仅首次自动展示，之后可在设置中主动查看。")
         }
-        Button(onClick=agree,modifier=Modifier.fillMaxWidth().height(50.dp).testTag("consent-agree")){Text("同意并继续")}
+        PhysicalButton(onClick=agree,modifier=Modifier.fillMaxWidth().height(50.dp).testTag("consent-agree")){Text("同意并继续")}
         TextButton(onClick=decline,modifier=Modifier.fillMaxWidth().testTag("consent-decline")){Text("不同意并退出")}
     }
 }

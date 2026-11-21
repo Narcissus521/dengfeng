@@ -66,7 +66,7 @@ private val tutorialPages=listOf(
         Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically) {
             TextButton(onClick={step--},enabled=step>0){Text("上一步")}
             TeaSmall("${step+1} / ${tutorialPages.size}")
-            Button(onClick={next()},modifier=Modifier.testTag("tutorial-next")){Text(if(step==tutorialPages.lastIndex)"开始使用" else "下一步")}
+            PhysicalButton(onClick={next()},modifier=Modifier.testTag("tutorial-next")){Text(if(step==tutorialPages.lastIndex)"开始使用" else "下一步")}
         }
     }
 }
